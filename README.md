@@ -8,4 +8,4 @@ Do not put a cortex-prod or atoms `DATABASE_URL` in this repo or its deploy env.
 
 Application surfaces mount this module. They do not merge it into the public spine. Later mounts (city, title, builder, agent, RWA operators) attach the same way. We are not RWA creators. RWA operators bring their own asset representation and mount onto provenance, this file room, and the map.
 
-G-58 / OPS-17. Isolation WDLL: `_inbox/2026-08-15_a_wdll_smart_files_isolation.md` in doc_repo.
+G-58 / OPS-17. Isolation WDLL lives in doc_repo at `_inbox/2026-08-15_a_wdll_smart_files_isolation.md`.
