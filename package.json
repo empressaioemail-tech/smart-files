@@ -6,6 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node src/server.mjs"
+    "start": "node src/server.mjs",
+    "test": "node --test src/identity.test.mjs"
   }
 }

@@ -12,4 +12,6 @@ Infra: Neon `smart-files` / `snowy-bread-83475727`. GCP `smart-files-505619`. Cl
 
 `GET /healthz` is the process liveness probe. Do not put the files DSN in this repo. Secret Manager is the home once the service is billed and serving.
 
+Store: `sql/001_foundation.sql` on Neon `snowy-bread-83475727`. Identity is `src/identity.mjs` (last-segment-is-slug). Default `access_policy` is `tenant-private`. Apply and seed read `%USERPROFILE%\\.empressa\\smart-files.database_url` and refuse a cortex-prod host.
+
 G-58 / OPS-17. Isolation WDLL lives in doc_repo at `_inbox/2026-08-15_a_wdll_smart_files_isolation.md`.
