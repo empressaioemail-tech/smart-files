@@ -8,9 +8,9 @@ Do not put a cortex-prod or atoms `DATABASE_URL` in this repo or its deploy env.
 
 Other products and actors mount this product. They do not merge it into the public spine. Later mounts (city, title, builder, agent, RWA operators) attach the same way. We are not RWA creators. RWA operators bring their own asset representation and mount onto provenance, this file room, and the map.
 
-Infra: Neon `smart-files` / `snowy-bread-83475727`. GCP `smart-files-505619`. Cloud Run service name will be `smart-files`, not `cortex-api`.
+Infra: Neon `smart-files` / `snowy-bread-83475727`. GCP `smart-files-505619`. Cloud Run service `smart-files` in us-east1. Live probe is `GET /` (GFE intercepts exact `/healthz` on `*.run.app`).
 
-`GET /healthz` is the process liveness probe. Do not put the files DSN in this repo. Secret Manager is the home once the service is billed and serving.
+HTTP: `GET /api/smart-files/folders`, `.../folders/:folderId/files`, `.../files/:entityId`, `.../files/:entityId/placements`. Anonymous callers are 401. Bearer is `SMART_FILES_SERVICE_TOKEN` from Secret Manager. `DATABASE_URL` is Secret Manager only. Do not put either in this repo.
 
 Store: `sql/001_foundation.sql` on Neon `snowy-bread-83475727`. Identity is `src/identity.mjs` (last-segment-is-slug). Default `access_policy` is `tenant-private`. Apply and seed read `%USERPROFILE%\\.empressa\\smart-files.database_url` and refuse a cortex-prod host.
 

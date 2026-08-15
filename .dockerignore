@@ -1,6 +1,6 @@
-.git
-.gitignore
-README.md
-**/.env
-**/*.database_url
 node_modules
+.git
+.env
+.env.*
+*.database_url
+*.service_token
