@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Files</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Smart Files</h1>
+        <p class="sub">QA rooms. Empressa product. Not cortex-api. Not Command Center.</p>
+      </div>
+      <label class="persona">
+        Acting as
+        <select id="persona"></select>
+      </label>
+    </header>
+
+    <main id="app">
+      <section class="col">
+        <div class="row-head">
+          <h2>Org rooms</h2>
+          <button type="button" id="refresh">Refresh</button>
+        </div>
+        <form id="create-folder">
+          <input name="label" placeholder="New room name" required />
+          <button type="submit">Create folder</button>
+        </form>
+        <ul id="folders" class="list"></ul>
+      </section>
+
+      <section class="col wide">
+        <div class="row-head">
+          <h2 id="room-title">Select a room</h2>
+          <button type="button" id="share" hidden>Share this room</button>
+        </div>
+        <p id="share-out" class="share" hidden></p>
+        <form id="upload" hidden>
+          <input type="file" name="file" required />
+          <button type="submit">Upload file</button>
+        </form>
+        <ul id="files" class="list"></ul>
+      </section>
+    </main>
+
+    <section id="share-view" hidden>
+      <p class="sub">Shared room (read only)</p>
+      <h2 id="share-title"></h2>
+      <ul id="share-files" class="list"></ul>
+    </section>
+
+    <p id="err" class="err" hidden></p>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

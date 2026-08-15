@@ -1,9 +1,15 @@
 import http from "node:http";
+import { QA_PERSONAS, resolvePersona } from "./actors.mjs";
 import {
+  createFolder,
+  createShare,
+  getBlob,
   listFolderFiles,
   listFolders,
   listPlacements,
   readDocument,
+  resolveShare,
+  uploadFileToFolder,
 } from "./store.mjs";
 
 const port = Number(process.env.PORT || 8080);
@@ -28,12 +34,55 @@ function requireToken(req, res) {
   return true;
 }
 
+function readBody(req, limit = 12 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let n = 0;
+    req.on("data", (c) => {
+      n += c.length;
+      if (n > limit) {
+        reject(new Error("body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+async function readJson(req) {
+  const raw = await readBody(req);
+  if (!raw.length) return {};
+  return JSON.parse(raw.toString("utf8"));
+}
+
+function requirePersona(body, res) {
+  const persona = resolvePersona(body.orgId, body.userId);
+  if (!persona) {
+    json(res, 400, {
+      error: "unknown_persona",
+      message: "orgId and userId must be a QA persona",
+      personas: QA_PERSONAS,
+    });
+    return null;
+  }
+  return persona;
+}
+
 async function handle(req, res) {
   const url = new URL(req.url || "/", "http://local");
   const path = decodeURIComponent(url.pathname);
 
   if (req.method === "GET" && (path === "/" || path === "/healthz")) {
     json(res, 200, { ok: true, service });
+    return;
+  }
+
+  if (req.method === "GET" && path === "/api/smart-files/personas") {
+    if (!requireToken(req, res)) return;
+    json(res, 200, { personas: QA_PERSONAS });
     return;
   }
 
@@ -62,7 +111,85 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "POST" && path === "/api/smart-files/folders") {
+      const body = await readJson(req);
+      const persona = requirePersona(body, res);
+      if (!persona) return;
+      if (!body.label) {
+        json(res, 400, { error: "label is required" });
+        return;
+      }
+      const folder = await createFolder({
+        orgId: persona.orgId,
+        userId: persona.userId,
+        label: String(body.label),
+      });
+      json(res, 201, { folder, servedAt: new Date().toISOString() });
+      return;
+    }
+
+    const shareGet = path.match(/^\/api\/smart-files\/share\/([^/]+)$/);
+    if (req.method === "GET" && shareGet) {
+      const data = await resolveShare(shareGet[1]);
+      if (!data) {
+        json(res, 404, { error: "share_not_found" });
+        return;
+      }
+      json(res, 200, { ...data, servedAt: new Date().toISOString() });
+      return;
+    }
+
+    const blobGet = path.match(/^\/api\/smart-files\/blobs\/(.+)$/);
+    if (req.method === "GET" && blobGet) {
+      const blob = await getBlob(blobGet[1]);
+      if (!blob) {
+        json(res, 404, { error: "blob_not_found" });
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": blob.content_type,
+        "content-length": String(blob.byte_size),
+        "content-disposition": "inline",
+      });
+      res.end(blob.bytes);
+      return;
+    }
+
+    const folderShare = path.match(/^\/api\/smart-files\/folders\/(.+)\/share$/);
+    if (req.method === "POST" && folderShare) {
+      const body = await readJson(req);
+      const persona = requirePersona(body, res);
+      if (!persona) return;
+      const share = await createShare({
+        folderId: folderShare[1],
+        orgId: persona.orgId,
+        userId: persona.userId,
+      });
+      json(res, 201, { ...share, servedAt: new Date().toISOString() });
+      return;
+    }
+
     const folderFiles = path.match(/^\/api\/smart-files\/folders\/(.+)\/files$/);
+    if (req.method === "POST" && folderFiles) {
+      const body = await readJson(req);
+      const persona = requirePersona(body, res);
+      if (!persona) return;
+      if (!body.bytesBase64 || !body.title) {
+        json(res, 400, { error: "title and bytesBase64 are required" });
+        return;
+      }
+      const uploaded = await uploadFileToFolder({
+        folderId: folderFiles[1],
+        orgId: persona.orgId,
+        userId: persona.userId,
+        title: String(body.title),
+        contentType: String(body.contentType || "application/octet-stream"),
+        bytes: Buffer.from(String(body.bytesBase64), "base64"),
+      });
+      json(res, 201, { file: uploaded, servedAt: new Date().toISOString() });
+      return;
+    }
+
     if (req.method === "GET" && folderFiles) {
       const folderId = folderFiles[1];
       const data = await listFolderFiles(folderId);
@@ -72,7 +199,7 @@ async function handle(req, res) {
           folderId,
           absence: {
             status: "not-sought",
-            basis: `No placed-on edges for folder ${folderId}`,
+            basis: `No folder row for ${folderId}`,
           },
         });
         return;
@@ -116,7 +243,8 @@ async function handle(req, res) {
 
     json(res, 404, { ok: false, service });
   } catch (err) {
-    json(res, 500, { error: "internal", message: String(err?.message || err) });
+    const status = err.status || (err.message === "body too large" ? 413 : 500);
+    json(res, status, { error: "internal", message: String(err?.message || err) });
   }
 }
 

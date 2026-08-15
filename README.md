@@ -10,7 +10,9 @@ Other products and actors mount this product. They do not merge it into the publ
 
 Infra: Neon `smart-files` / `snowy-bread-83475727`. GCP `smart-files-505619`. Cloud Run service `smart-files` in us-east1. Live probe is `GET /` (GFE intercepts exact `/healthz` on `*.run.app`).
 
-HTTP: `GET /api/smart-files/folders`, `.../folders/:folderId/files`, `.../files/:entityId`, `.../files/:entityId/placements`. Anonymous callers are 401. Bearer is `SMART_FILES_SERVICE_TOKEN` from Secret Manager. `DATABASE_URL` is Secret Manager only. Do not put either in this repo.
+HTTP: `GET /api/smart-files/folders`, `.../folders/:folderId/files`, `.../files/:entityId`, `.../files/:entityId/placements`. Writes: `POST /api/smart-files/folders`, `POST .../folders/:folderId/files`, `POST .../folders/:folderId/share`, `GET .../share/:token`. Anonymous callers are 401. Bearer is `SMART_FILES_SERVICE_TOKEN` from Secret Manager. `DATABASE_URL` is Secret Manager only. Do not put either in this repo.
+
+QA UI: https://smart-files-app.vercel.app (Vercel project `smart-files-app`, not property-explorer, not cmdcenter). BFF at `/api/files` holds URL + service token only. Personas are QA actors (Joe/Acme, Jane/Acme, Nick/Empressa), not G-11.
 
 Store: `sql/001_foundation.sql` on Neon `snowy-bread-83475727`. Identity is `src/identity.mjs` (last-segment-is-slug). Default `access_policy` is `tenant-private`. Apply and seed read `%USERPROFILE%\\.empressa\\smart-files.database_url` and refuse a cortex-prod host.
 

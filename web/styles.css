@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light;
+  --ink: #12202a;
+  --muted: #5b6b75;
+  --line: #d5dde2;
+  --bg: #f6f3ee;
+  --card: #fff;
+  --accent: #1f4d3a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.45 "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+header, main, #share-view { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+header { display: flex; justify-content: space-between; gap: 16px; align-items: end; }
+h1, h2 { margin: 0 0 6px; font-weight: 600; }
+.sub, .share { color: var(--muted); font-size: 13px; }
+main { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+.col { background: var(--card); border: 1px solid var(--line); padding: 16px; }
+.wide { min-height: 420px; }
+.row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+form { display: flex; gap: 8px; margin-bottom: 12px; }
+input, select, button {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+button[hidden], form[hidden], #share-out[hidden], #share-view[hidden], #err[hidden] { display: none; }
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { border-top: 1px solid var(--line); padding: 10px 0; }
+.list button.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+.meta { color: var(--muted); font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+.err { color: #8a1f1f; padding: 0 20px 24px; max-width: 1100px; margin: 0 auto; }
+@media (max-width: 800px) { main { grid-template-columns: 1fr; } }

@@ -1,5 +1,16 @@
 import pg from "pg";
-import { parseSmartFileEntityId } from "./identity.mjs";
+import { actorKey } from "./actors.mjs";
+import {
+  buildFolderId,
+  contentCidFromBytes,
+  shareToken,
+  slugify,
+} from "./cid.mjs";
+import {
+  buildSmartFileEntityId,
+  DEFAULT_ACCESS_POLICY,
+  parseSmartFileEntityId,
+} from "./identity.mjs";
 
 const COUNTING_RULE =
   "DISTINCT smart_file_documents.id via smart_file_placements WHERE target_type='folder' AND target_id=folderId";
@@ -25,25 +36,222 @@ function folderLabel(folderId) {
 
 export async function listFolders(scopeType, scopeId) {
   const { rows } = await getPool().query(
-    `SELECT p.target_id AS folder_id,
-            MIN(d.access_policy) AS access_policy
-       FROM smart_file_placements p
-       JOIN smart_file_documents d ON d.id = p.document_id
-      WHERE p.target_type = 'folder'
-        AND d.scope_type = $1
-        AND d.scope_id = $2
-      GROUP BY p.target_id
-      ORDER BY p.target_id`,
+    `SELECT folder_id, label, scope_type, scope_id, access_policy, created_by, created_at
+       FROM smart_file_folders
+      WHERE scope_type = $1 AND scope_id = $2
+      ORDER BY created_at DESC, folder_id`,
     [scopeType, scopeId],
   );
   return rows.map((r) => ({
     folderId: r.folder_id,
-    label: folderLabel(r.folder_id),
-    scopeType,
-    scopeId,
+    label: r.label || folderLabel(r.folder_id),
+    scopeType: r.scope_type,
+    scopeId: r.scope_id,
     accessPolicy: r.access_policy,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
     parentFolderId: null,
   }));
+}
+
+export async function createFolder({ orgId, userId, label }) {
+  const slug = slugify(label);
+  if (!slug) throw new Error("folder label must yield a slug");
+  const folderId = buildFolderId(orgId, slug);
+  const createdBy = actorKey(orgId, userId);
+  const { rows } = await getPool().query(
+    `INSERT INTO smart_file_folders (folder_id, scope_type, scope_id, label, created_by)
+     VALUES ($1, 'tenant', $2, $3, $4)
+     ON CONFLICT (folder_id) DO UPDATE
+       SET label = EXCLUDED.label
+     RETURNING folder_id, label, scope_type, scope_id, access_policy, created_by, created_at`,
+    [folderId, orgId, label.trim(), createdBy],
+  );
+  const r = rows[0];
+  return {
+    folderId: r.folder_id,
+    label: r.label,
+    scopeType: r.scope_type,
+    scopeId: r.scope_id,
+    accessPolicy: r.access_policy,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    parentFolderId: null,
+  };
+}
+
+export async function uploadFileToFolder({
+  folderId,
+  orgId,
+  userId,
+  title,
+  contentType,
+  bytes,
+}) {
+  const folder = await getFolder(folderId);
+  if (!folder) {
+    const err = new Error("folder_not_found");
+    err.status = 404;
+    throw err;
+  }
+  if (folder.scopeType !== "tenant" || folder.scopeId !== orgId) {
+    const err = new Error("folder is not in this org");
+    err.status = 403;
+    throw err;
+  }
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  if (buf.length === 0) throw new Error("empty upload");
+  if (buf.length > 8 * 1024 * 1024) throw new Error("upload exceeds 8MB QA cap");
+  const cid = contentCidFromBytes(buf);
+  const baseSlug = slugify(title) || `file-${Date.now()}`;
+  let docSlug = baseSlug;
+  let entityId = buildSmartFileEntityId({
+    scopeType: "tenant",
+    scopeId: orgId,
+    docSlug,
+  });
+  const createdBy = actorKey(orgId, userId);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO smart_file_blobs (content_cid, content_type, byte_size, bytes)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (content_cid) DO NOTHING`,
+      [cid, contentType || "application/octet-stream", buf.length, buf],
+    );
+    for (let i = 2; i < 20; i += 1) {
+      const exists = await client.query(
+        `SELECT 1 FROM smart_file_documents WHERE entity_id = $1`,
+        [entityId],
+      );
+      if (exists.rowCount === 0) break;
+      docSlug = `${baseSlug}-${i}`;
+      entityId = buildSmartFileEntityId({
+        scopeType: "tenant",
+        scopeId: orgId,
+        docSlug,
+      });
+    }
+    const doc = await client.query(
+      `INSERT INTO smart_file_documents
+         (entity_id, scope_type, scope_id, doc_slug, title, access_policy, current_version, created_by)
+       VALUES ($1, 'tenant', $2, $3, $4, $5, 1, $6)
+       RETURNING *`,
+      [entityId, orgId, docSlug, title.trim() || docSlug, DEFAULT_ACCESS_POLICY, createdBy],
+    );
+    const documentId = doc.rows[0].id;
+    await client.query(
+      `INSERT INTO smart_file_versions
+         (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
+       VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb)`,
+      [
+        documentId,
+        entityId,
+        cid,
+        contentType || "application/octet-stream",
+        buf.length,
+        JSON.stringify({
+          sourceLabel: "qa-upload",
+          uploadedBy: createdBy,
+        }),
+      ],
+    );
+    await client.query(
+      `INSERT INTO smart_file_placements
+         (document_id, document_entity_id, target_type, target_id, placed_by)
+       VALUES ($1, $2, 'folder', $3, $4)`,
+      [documentId, entityId, folderId, createdBy],
+    );
+    await client.query("COMMIT");
+    return {
+      entityId,
+      title: doc.rows[0].title,
+      accessPolicy: doc.rows[0].access_policy,
+      currentVersion: 1,
+      contentCid: cid,
+      contentType: contentType || "application/octet-stream",
+      byteSize: buf.length,
+      folderId,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getFolder(folderId) {
+  const { rows } = await getPool().query(
+    `SELECT folder_id, label, scope_type, scope_id, access_policy, created_by, created_at
+       FROM smart_file_folders WHERE folder_id = $1`,
+    [folderId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    folderId: r.folder_id,
+    label: r.label,
+    scopeType: r.scope_type,
+    scopeId: r.scope_id,
+    accessPolicy: r.access_policy,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    parentFolderId: null,
+  };
+}
+
+export async function createShare({ folderId, orgId, userId }) {
+  const folder = await getFolder(folderId);
+  if (!folder) {
+    const err = new Error("folder_not_found");
+    err.status = 404;
+    throw err;
+  }
+  if (folder.scopeType !== "tenant" || folder.scopeId !== orgId) {
+    const err = new Error("folder is not in this org");
+    err.status = 403;
+    throw err;
+  }
+  const token = shareToken();
+  await getPool().query(
+    `INSERT INTO smart_file_shares (token, folder_id, created_by)
+     VALUES ($1, $2, $3)`,
+    [token, folderId, actorKey(orgId, userId)],
+  );
+  return { token, folderId };
+}
+
+export async function resolveShare(token) {
+  const { rows } = await getPool().query(
+    `SELECT s.token, s.folder_id, s.created_by, s.created_at, s.revoked_at
+       FROM smart_file_shares s
+      WHERE s.token = $1`,
+    [token],
+  );
+  if (rows.length === 0 || rows[0].revoked_at) return null;
+  const folder = await getFolder(rows[0].folder_id);
+  if (!folder) return null;
+  const files = await listFolderFiles(folder.folderId);
+  return {
+    share: {
+      token: rows[0].token,
+      createdBy: rows[0].created_by,
+      createdAt: rows[0].created_at,
+    },
+    folder,
+    files: files.files,
+  };
+}
+
+export async function getBlob(contentCid) {
+  const { rows } = await getPool().query(
+    `SELECT content_cid, content_type, byte_size, bytes
+       FROM smart_file_blobs WHERE content_cid = $1`,
+    [contentCid],
+  );
+  return rows[0] ?? null;
 }
 
 export async function listFolderFiles(folderId) {
@@ -59,7 +267,8 @@ export async function listFolderFiles(folderId) {
     [folderId],
   );
   if (rows.length === 0) {
-    return { folder: null, files: [] };
+    const folder = await getFolder(folderId);
+    return { folder, files: [], countingRule: COUNTING_RULE };
   }
   const first = rows[0];
   return {
