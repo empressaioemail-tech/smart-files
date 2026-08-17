@@ -1,0 +1,80 @@
+/* SmartCity product-line kit — copy payload (G-67).
+   Source: 30b_smartcity_design_system.html token layer 2026-08-17.
+   Byte-identical across smartcity-dashboards, smart-files, plan-review.
+   A repo that edits a token value has forked the system.
+   Light atom #177F78 / dark atom #4CC9C0. Decision _decisions/2026-08-17_atom_accent_light_hex.md
+   Compass spring (not a CSS duration): stiffness 320, damping 32, mass 0.9. Nothing else inherits it.
+*/
+
+:root, .sc-light {
+  --sc-canvas:#EEF1F4; --sc-surface:#FFFFFF; --sc-surface-2:#F6F8FA; --sc-surface-3:#E9EEF2;
+  --sc-line-faint:#E4E9EE; --sc-line:#D2DAE1; --sc-line-strong:#AEBAC5;
+  --sc-ink:#101820; --sc-ink-2:#46586A; --sc-ink-3:#6C7E8E;
+  --sc-accent:#0B6A7B; --sc-accent-hi:#095563; --sc-accent-wash:#DFEFF2; --sc-on-accent:#FFFFFF;
+  --sc-focus:#0B6A7B;
+  --sc-ok:#2F7A52;         --sc-ok-wash:#E3F0E8;
+  --sc-info:#2B5FC7;       --sc-info-wash:#E5ECFB;
+  --sc-warn:#9A5B08;       --sc-warn-wash:#FBEEDA;
+  --sc-crit:#AF2A22;       --sc-crit-wash:#FBE6E4;
+  --sc-restricted:#5347B5; --sc-restricted-wash:#EBE9F8;
+  --sc-quiet:#6C7E8E;      --sc-quiet-wash:#E9EEF2;
+  --sc-atom:#177F78;        --sc-atom-wash:#DFF2F0;
+  --sc-e1:0 1px 2px rgba(16,24,32,.07);
+  --sc-e2:0 6px 16px -4px rgba(16,24,32,.14);
+  --sc-e3:0 20px 48px -12px rgba(16,24,32,.26);
+  --sc-map-ground:#E7EBEE; --sc-doc-ground:#DDE3E8;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sc-canvas:#0C1116; --sc-surface:#12191F; --sc-surface-2:#18212A; --sc-surface-3:#1E2833;
+    --sc-line-faint:#1D262F; --sc-line:#29343F; --sc-line-strong:#3B4854;
+    --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#7B8B99;
+    --sc-accent:#4EAFC2; --sc-accent-hi:#6CC6D7; --sc-accent-wash:rgba(78,175,194,.13); --sc-on-accent:#04222A;
+    --sc-focus:#7FCFDF;
+    --sc-ok:#55BE86;         --sc-ok-wash:rgba(85,190,134,.13);
+    --sc-info:#6DA3F5;       --sc-info-wash:rgba(109,163,245,.14);
+    --sc-warn:#DDA14C;       --sc-warn-wash:rgba(221,161,76,.14);
+    --sc-crit:#EF7B72;       --sc-crit-wash:rgba(239,123,114,.14);
+    --sc-restricted:#A092EE; --sc-restricted-wash:rgba(160,146,238,.14);
+    --sc-quiet:#7B8B99;      --sc-quiet-wash:rgba(123,139,153,.14);
+    --sc-atom:#4CC9C0;        --sc-atom-wash:rgba(76,201,192,.14);
+    --sc-e1:0 1px 2px rgba(0,0,0,.40);
+    --sc-e2:0 8px 20px -6px rgba(0,0,0,.55);
+    --sc-e3:0 24px 56px -16px rgba(0,0,0,.70);
+    --sc-map-ground:#141C23; --sc-doc-ground:#182027;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"], .sc-dark {
+  --sc-canvas:#0C1116; --sc-surface:#12191F; --sc-surface-2:#18212A; --sc-surface-3:#1E2833;
+  --sc-line-faint:#1D262F; --sc-line:#29343F; --sc-line-strong:#3B4854;
+  --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#7B8B99;
+  --sc-accent:#4EAFC2; --sc-accent-hi:#6CC6D7; --sc-accent-wash:rgba(78,175,194,.13); --sc-on-accent:#04222A;
+  --sc-focus:#7FCFDF;
+  --sc-ok:#55BE86;         --sc-ok-wash:rgba(85,190,134,.13);
+  --sc-info:#6DA3F5;       --sc-info-wash:rgba(109,163,245,.14);
+  --sc-warn:#DDA14C;       --sc-warn-wash:rgba(221,161,76,.14);
+  --sc-crit:#EF7B72;       --sc-crit-wash:rgba(239,123,114,.14);
+  --sc-restricted:#A092EE; --sc-restricted-wash:rgba(160,146,238,.14);
+  --sc-quiet:#7B8B99;      --sc-quiet-wash:rgba(123,139,153,.14);
+  --sc-atom:#4CC9C0;        --sc-atom-wash:rgba(76,201,192,.14);
+  --sc-e1:0 1px 2px rgba(0,0,0,.40);
+  --sc-e2:0 8px 20px -6px rgba(0,0,0,.55);
+  --sc-e3:0 24px 56px -16px rgba(0,0,0,.70);
+  --sc-map-ground:#141C23; --sc-doc-ground:#182027;
+  color-scheme:dark;
+}
+
+:root{
+  --sc-font-ui: "Inter", "Inter Variable", ui-sans-serif, system-ui, "Segoe UI Variable Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sc-font-data: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+  --sc-1:4px; --sc-2:8px; --sc-3:12px; --sc-4:16px; --sc-5:20px;
+  --sc-6:24px; --sc-7:32px; --sc-8:40px; --sc-9:48px; --sc-10:64px;
+  --sc-r-control:4px; --sc-r:6px; --sc-r-lg:8px; --sc-r-full:999px;
+  --sc-dur-1:100ms; --sc-dur-2:140ms; --sc-dur-3:180ms;
+  --sc-ease:cubic-bezier(.2,.6,.35,1);
+  --sc-spring-stiffness:320; --sc-spring-damping:32; --sc-spring-mass:0.9;
+  --sc-topbar:52px; --sc-nav:248px; --sc-nav-rail:56px; --sc-rail:380px;
+  --sc-row:44px; --sc-row-compact:32px;
+}
