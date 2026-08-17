@@ -1,6 +1,7 @@
-/* G-68 Smart Files browser. WDLL items 3-6.
+/* G-68 Smart Files browser. G-72 embed chrome (WDLL items 2-4).
    Write path still goes through api() → /api/files BFF.
-   No Google OAuth. Persona select lives in the demo fixture panel only. */
+   No Google OAuth. Persona select lives in the demo fixture panel only.
+   Embed: ?embed=1|true, iframe, or dashboards referrer sets html[data-embed=1]. */
 
 const PERSONAS = [
   { orgId: "acme", userId: "joe", label: "Joe / Acme" },
@@ -25,6 +26,27 @@ function showErr(msg) {
 function persona() {
   const [orgId, userId] = $("persona").value.split("/");
   return { orgId, userId };
+}
+
+function embedParam() {
+  return new URL(location.href).searchParams.get("embed");
+}
+
+function isEmbedded() {
+  const q = embedParam();
+  if (q === "1" || q === "true") return true;
+  try {
+    if (window.self !== window.top) return true;
+  } catch {
+    return true;
+  }
+  const ref = document.referrer || "";
+  return /smartcity-dashboards|dashboards/i.test(ref);
+}
+
+function applyEmbedChrome() {
+  if (isEmbedded()) document.documentElement.dataset.embed = "1";
+  else delete document.documentElement.dataset.embed;
 }
 
 function api(path, opts = {}) {
@@ -529,6 +551,7 @@ function refuseOAuth() {
 }
 
 function boot() {
+  applyEmbedChrome();
   const sel = $("persona");
   for (const p of PERSONAS) {
     const o = document.createElement("option");

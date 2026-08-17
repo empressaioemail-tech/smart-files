@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Smart Files</title>
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search).get("embed");
+        var embed = q === "1" || q === "true";
+        if (!embed) {
+          try {
+            embed = window.self !== window.top;
+          } catch (e) {
+            embed = true;
+          }
+        }
+        if (!embed) {
+          embed = /smartcity-dashboards|dashboards/i.test(document.referrer || "");
+        }
+        if (embed) document.documentElement.setAttribute("data-embed", "1");
+      })();
+    </script>
     <link rel="stylesheet" href="/sc-kit.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
