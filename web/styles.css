@@ -458,6 +458,15 @@ body {
 .fixture-panel .field { display: flex; flex-direction: column; gap: var(--sc-1); }
 .fixture-panel .panel-head { border-bottom: 1px dashed color-mix(in srgb, var(--sc-warn) 40%, transparent); }
 
+/* G-72: city shell mounts this page. Hide demo fixture and nested product wordmark. */
+html[data-embed="1"] #fixture-panel,
+html[data-embed="1"] #app > .shell-top {
+  display: none !important;
+}
+html[data-embed="1"] .shell {
+  min-height: 100%;
+}
+
 .err {
   color: var(--sc-crit);
   padding: var(--sc-3) var(--sc-4);
