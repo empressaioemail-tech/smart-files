@@ -1,58 +1,347 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Smart Files</title>
-    <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/sc-kit.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <header>
-      <div>
-        <h1>Smart Files</h1>
-        <p class="sub">QA rooms. Empressa product. Not cortex-api. Not Command Center.</p>
+  <body class="sc">
+    <div id="app" class="shell">
+      <div class="shell-top">
+        <span class="seal">SF</span>
+        <span class="brandcity">Smart Files <span>· City of Template</span></span>
+        <span class="env demo">Demo city</span>
+        <div class="grow searchwrap">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="q" class="inp" type="search" placeholder="Search all your smart files" aria-label="Search files" />
+        </div>
       </div>
-      <label class="persona">
-        Acting as
-        <select id="persona"></select>
-      </label>
-    </header>
 
-    <main id="app">
-      <section class="col">
-        <div class="row-head">
-          <h2>Org rooms</h2>
-          <button type="button" id="refresh">Refresh</button>
+      <div class="shell-body">
+        <nav class="shell-nav" aria-label="Places">
+          <div class="navgroup" style="padding-top:var(--sc-3)">
+            <button type="button" class="navitem" data-place="search">Search</button>
+            <button type="button" class="navitem" data-place="recents">Recents</button>
+            <button type="button" class="navitem on" data-place="my-files" id="place-my-files">My files<span class="grow"></span><span class="badge" id="count-mine">0</span></button>
+            <button type="button" class="navitem" data-place="shared-with-me">Shared with me<span class="grow"></span><span class="badge" id="count-with">0</span></button>
+            <button type="button" class="navitem" data-place="shared-by-me">Shared by me<span class="grow"></span><span class="badge" id="count-by">0</span></button>
+          </div>
+          <div class="navgroup">
+            <div class="gl">Folders</div>
+            <div id="folders"></div>
+          </div>
+          <div class="navgroup">
+            <div class="gl">Add</div>
+            <button type="button" class="navitem accent" data-place="bring">Bring files</button>
+            <button type="button" class="navitem" id="upload-quiet">Upload from this computer</button>
+          </div>
+          <div class="nav-foot"><span class="prov"><b>Your data is yours</b></span></div>
+        </nav>
+
+        <div class="shell-main">
+          <header class="pagehead">
+            <div class="crumb" id="crumb"><b>My files</b></div>
+            <div class="titlerow">
+              <h1 id="page-title">My files</h1>
+              <span class="pill p-restricted" id="access-pill"><span class="gl">●</span> Tenant private</span>
+              <span class="fill"></span>
+              <form id="create-folder">
+                <input class="inp" name="label" placeholder="New folder name" required />
+                <button type="submit" class="btn btn-sm">New folder</button>
+              </form>
+              <button type="button" class="btn btn-sm" id="refresh">Refresh</button>
+              <button type="button" class="btn btn-sm" data-place="bring">Bring files</button>
+              <button type="button" class="btn btn-sm" id="upload-btn">Upload</button>
+              <button type="button" class="btn btn-primary btn-sm" id="share">Share</button>
+            </div>
+            <form id="upload" hidden>
+              <input type="file" name="file" required />
+            </form>
+          </header>
+
+          <div id="browser-view" class="shell-regions">
+            <div class="colstack">
+              <div class="panel compact">
+                <div class="filterbar">
+                  <button type="button" class="chip on" id="view-list">List</button>
+                  <button type="button" class="chip" id="view-grid">Grid</button>
+                  <span class="grow"></span>
+                  <span class="t-caption" id="list-meta">0 folders</span>
+                </div>
+                <div class="scroll" id="list-scroll">
+                  <table class="dt" id="file-table">
+                    <thead>
+                      <tr>
+                        <th class="rail"></th>
+                        <th>Name</th>
+                        <th>Kind</th>
+                        <th>Version</th>
+                        <th>Who can see it</th>
+                        <th>Last revised</th>
+                        <th style="text-align:right">Referenced</th>
+                      </tr>
+                    </thead>
+                    <tbody id="file-rows"></tbody>
+                  </table>
+                  <div id="grid" class="file-grid" hidden></div>
+                </div>
+                <div id="empty-state" class="state" hidden>
+                  <span class="st-k">No rooms</span>
+                  <h5>No file rooms for this tenant yet.</h5>
+                  <p>Files are private to the tenant that owns them. Nothing has been created here, and nothing has been shared with it.</p>
+                  <span class="basis">Basis: 0 rooms owned, 0 rooms shared to this tenant<br />Contact: create the first folder, or bring files from a link</span>
+                  <div class="row" style="margin-top:var(--sc-2)">
+                    <button type="button" class="btn btn-primary btn-sm" id="empty-create">New folder</button>
+                    <button type="button" class="btn btn-sm" data-place="bring">Bring files</button>
+                    <button type="button" class="btn btn-sm" id="empty-request">Request access</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="colstack" id="access-rail" hidden>
+              <div class="panel">
+                <div class="panel-head">
+                  <span class="t">Who can see it</span>
+                  <span class="grow"></span>
+                  <button type="button" class="btn btn-primary btn-sm" id="share-rail">Share</button>
+                </div>
+                <div class="panel-body flush" id="access-rows">
+                  <div class="srcreg">
+                    <i class="rail"></i>
+                    <span class="nm"><b>Tenant private</b><span>Default until someone is named</span></span>
+                    <span class="pill p-restricted"><span class="gl">●</span> Default</span>
+                    <span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-body">
+                  <p class="t-caption">A share link is a row in this list with a name and a time, not a URL that exists off the record. Revoke sits at the same weight as the grant.</p>
+                  <button type="button" class="btn btn-sm" id="open-people">Open People and access</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="people-view" hidden>
+            <div class="panel">
+              <div class="panel-head">
+                <span class="t">People and access</span>
+                <span class="grow"></span>
+                <span class="t-caption" id="people-folder">Select a folder</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="people-back">Back to files</button>
+              </div>
+              <div class="scroll">
+                <table class="dt">
+                  <thead>
+                    <tr>
+                      <th class="rail"></th>
+                      <th>Who</th>
+                      <th>Permission</th>
+                      <th>Granted by</th>
+                      <th>When</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="people-rows"></tbody>
+                </table>
+              </div>
+              <div class="panel-body">
+                <p class="t-caption">Every grant, every link, every revoke, with a name and a time. This is the page a city attorney opens.</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="bring-view" hidden>
+            <div class="colstack bring-stack">
+              <div class="panel">
+                <div class="panel-head">
+                  <span class="t">Bring files</span>
+                  <span class="grow"></span>
+                  <span class="t-caption">Paste a link to a file or folder</span>
+                </div>
+                <div class="panel-body">
+                  <div class="row">
+                    <div class="searchwrap grow">
+                      <input id="bring-link" class="inp mono" placeholder="https://drive.google.com/…" aria-label="Source link" />
+                    </div>
+                    <button type="button" class="btn btn-sm" id="bring-dest">Destination: My files</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="bring-go">Bring files</button>
+                  </div>
+                  <p class="t-caption">Paste a link, name the folder they land in, confirm. That is the whole happy path. No account connection required when the link is reachable. This page is chrome against fixture data. It is not a live Drive sync.</p>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <span class="t">Sources</span>
+                  <span class="grow"></span>
+                  <span class="t-caption">State, not a logo wall</span>
+                </div>
+                <div class="panel-body flush">
+                  <div class="srcreg ok">
+                    <i class="rail"></i>
+                    <span class="nm"><b>Paste a share link</b><span>Google Drive, Dropbox, OneDrive, or any reachable https link</span></span>
+                    <span class="pill p-ok"><span class="gl">✓</span> Available</span>
+                    <span></span>
+                  </div>
+                  <div class="srcreg">
+                    <i class="rail"></i>
+                    <span class="nm"><b>Connected Google Drive</b><span>Browse and bring without pasting a link each time</span></span>
+                    <span class="pill p-quiet"><span class="gl">–</span> Not connected</span>
+                    <button type="button" class="btn btn-sm drive-connect">Connect</button>
+                  </div>
+                  <div class="srcreg">
+                    <i class="rail"></i>
+                    <span class="nm"><b>Connected Dropbox</b><span>Browse and bring without pasting a link each time</span></span>
+                    <span class="pill p-quiet"><span class="gl">–</span> Not connected</span>
+                    <button type="button" class="btn btn-sm drive-connect">Connect</button>
+                  </div>
+                  <div class="srcreg ok">
+                    <i class="rail"></i>
+                    <span class="nm"><b>Upload from this computer</b><span>Always available</span></span>
+                    <span class="pill p-ok"><span class="gl">✓</span> Available</span>
+                    <span></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bring-grid">
+                <div class="panel" data-bring-state="checking">
+                  <div class="panel-head"><span class="t">Checking the link</span></div>
+                  <div class="panel-body">
+                    <div class="p4bar"><i style="width:38%"></i></div>
+                    <p class="t-caption">Reading what this link contains. Nothing has been brought in yet.</p>
+                  </div>
+                </div>
+                <div class="panel" data-bring-state="bringing">
+                  <div class="panel-head"><span class="t">Bringing in</span><span class="grow"></span><span class="t-data">12 of 40</span></div>
+                  <div class="panel-body">
+                    <div class="p4bar"><i style="width:30%"></i></div>
+                    <p class="t-caption">Landing in <b>Plan review submittals</b>. You can leave this page; it keeps going.</p>
+                  </div>
+                </div>
+                <div class="panel" data-bring-state="converted">
+                  <div class="panel-head"><span class="t">Converted</span><span class="grow"></span><span class="pill p-ok"><span class="gl">✓</span> 40 of 40</span></div>
+                  <div class="panel-body">
+                    <p class="t-caption">Each file is now a Smart File with its own versions and access. Staff work here from now on.</p>
+                    <span class="prov"><b>From a Google Drive folder</b> <span class="sep">|</span> brought in 2026-08-17</span>
+                  </div>
+                </div>
+                <div class="panel" data-bring-state="partial">
+                  <div class="panel-head"><span class="t">Partial</span><span class="grow"></span><span class="pill p-warn"><span class="gl">!</span> 37 of 40 landed</span></div>
+                  <div class="panel-body flush">
+                    <div class="srcreg">
+                      <i class="rail"></i>
+                      <span class="nm"><b>survey-2019-original.dwg</b><span>The owner has not shared this file</span></span>
+                      <span class="pill p-crit"><span class="gl">×</span> Permission denied</span>
+                      <span></span>
+                    </div>
+                    <div class="srcreg">
+                      <i class="rail"></i>
+                      <span class="nm"><b>site-model.rvt</b><span>This kind cannot be brought in from a link</span></span>
+                      <span class="pill p-quiet"><span class="gl">–</span> Unsupported</span>
+                      <span></span>
+                    </div>
+                    <div class="srcreg">
+                      <i class="rail"></i>
+                      <span class="nm"><b>shortcut-to-2024-folder</b><span>Points outside the shared folder</span></span>
+                      <span class="pill p-quiet"><span class="gl">–</span> Not followed</span>
+                      <span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel" data-bring-state="failed">
+                <div class="state">
+                  <span class="st-k">Permission denied</span>
+                  <h5>The owner has not shared this folder.</h5>
+                  <p>The link is valid but this account cannot read it. Ask the owner to share the folder, then paste the link again. Nothing was brought in.</p>
+                  <span class="basis">Basis: source returned no access for this link<br />Next: request access from the folder owner, or upload the files directly</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <form id="create-folder">
-          <input name="label" placeholder="New room name" required />
-          <button type="submit">Create folder</button>
-        </form>
-        <ul id="folders" class="list"></ul>
-      </section>
+      </div>
+    </div>
 
-      <section class="col wide">
-        <div class="row-head">
-          <h2 id="room-title">Select a room</h2>
-          <button type="button" id="share" hidden>Share this room</button>
+    <div id="share-dialog" class="dlg" hidden>
+      <div class="dlg-scrim" id="share-scrim"></div>
+      <div class="panel dlg-card" role="dialog" aria-labelledby="share-dialog-title">
+        <div class="panel-head">
+          <span class="t" id="share-dialog-title">Share</span>
+          <span class="grow"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="share-close">Close</button>
         </div>
-        <p id="share-out" class="share" hidden></p>
-        <form id="upload" hidden>
-          <input type="file" name="file" required />
-          <button type="submit">Upload file</button>
-        </form>
-        <ul id="files" class="list"></ul>
-      </section>
-    </main>
+        <div class="panel-body">
+          <div class="row">
+            <div class="searchwrap grow">
+              <input class="inp" id="share-person" placeholder="Add a person or a group" aria-label="Add person" />
+            </div>
+            <button type="button" class="btn btn-sm">View</button>
+            <button type="button" class="btn btn-primary btn-sm" id="share-add">Add</button>
+          </div>
+          <div class="t-label">People</div>
+          <div id="share-people"></div>
+          <div class="t-label">Link</div>
+          <div class="row between">
+            <span class="t-caption">Anyone with the link</span>
+            <span class="pill p-info"><span class="gl">●</span> View only</span>
+          </div>
+          <div class="cp-honest">They will see the files in this folder, read-only, with the city name on the page. They will not see who else has access, and they will not get a staff session.</div>
+          <p class="t-caption" id="share-out" hidden></p>
+          <div class="row">
+            <button type="button" class="btn btn-sm" id="share-copy">Copy link</button>
+            <button type="button" class="btn btn-primary btn-sm" id="share-done">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <section id="share-view" hidden>
-      <p class="sub">Shared room (read only)</p>
-      <h2 id="share-title"></h2>
-      <ul id="share-files" class="list"></ul>
+    <section id="share-view" class="sc sc-light share-readonly" hidden>
+      <div class="shell-top">
+        <span class="seal">CT</span>
+        <span class="brandcity">City of Template</span>
+        <span class="pill p-ok"><span class="gl">✓</span> Shared read-only</span>
+      </div>
+      <div class="share-body">
+        <h2 id="share-title"></h2>
+        <p class="t-caption" id="share-who">Shared as a read-only copy. This is not a staff session.</p>
+        <div class="region">
+          <div class="region-bar"><span class="t">Files</span></div>
+          <ul id="share-files" class="list"></ul>
+        </div>
+        <div id="share-request" class="state" hidden>
+          <span class="st-k">Request access</span>
+          <h5>You cannot read this folder.</h5>
+          <p>The link is valid but this copy is not shared with you. Ask the person who sent it to share the folder, or upload the files you hold.</p>
+          <span class="basis">Basis: this share token does not resolve a room you can read<br />Next: request access from the sender</span>
+        </div>
+      </div>
     </section>
 
+    <aside id="fixture-panel" class="fixture-panel" aria-label="Demo fixture panel">
+      <div class="panel-head">
+        <span class="t">Demo fixture</span>
+        <span class="grow"></span>
+        <span class="env demo">Absent in a city deployment</span>
+      </div>
+      <div class="panel-body">
+        <p class="t-caption">Acting-as is identity from the session. This panel is a QA fixture only. It is not product chrome and is not present in a city deployment.</p>
+        <label class="field">
+          <span class="t-label">Acting as (fixture)</span>
+          <select id="persona" class="inp"></select>
+        </label>
+      </div>
+    </aside>
+
     <p id="err" class="err" hidden></p>
+    <div id="toast" class="toast" hidden></div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
