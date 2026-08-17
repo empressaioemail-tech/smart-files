@@ -7,6 +7,9 @@ const PERSONAS = [
   { orgId: "acme", userId: "joe", label: "Joe / Acme" },
   { orgId: "acme", userId: "jane", label: "Jane / Acme" },
   { orgId: "empressa", userId: "nick", label: "Nick / Empressa" },
+  { orgId: "icc-demo", userId: "reviewer", label: "Empressa reviewer / icc-demo" },
+  { orgId: "icc-demo", userId: "observer", label: "ICC observer / icc-demo" },
+  { orgId: "template-city", userId: "g71-calendar", label: "Template city clerk / calendar" },
 ];
 
 const FIXTURE_GRANTS = [
