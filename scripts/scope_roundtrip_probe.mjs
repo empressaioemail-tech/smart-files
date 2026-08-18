@@ -263,6 +263,49 @@ async function negativeChecks(instrumentFolderId) {
   );
 }
 
+/**
+ * listFolders validates the `instrument` scopeId and NOTHING else.
+ *
+ * Jurisdiction, tenant and site keep the behaviour they shipped with: a
+ * non-empty scopeId is the whole rule, and an id that matches no folder lists
+ * nothing rather than erroring. These checks fail if anyone widens that rule
+ * back out across every scope. Ruled by the owning lane on review of PR #5.
+ */
+async function narrowingChecks() {
+  const unchanged = [
+    ["jurisdiction with a non-FIPS scopeId still lists", "jurisdiction", "bastrop"],
+    ["jurisdiction with a FIPS scopeId still lists", "jurisdiction", "48021"],
+    ["site with a colon-bearing scopeId still lists", "site", "parcel:48021:R12345"],
+    ["tenant with an odd but non-empty scopeId still lists", "tenant", "Mixed_Case"],
+    ["tenant with an instrument-shaped scopeId still lists", "tenant", NODE_ID],
+  ];
+  for (const [why, scopeType, scopeId] of unchanged) {
+    const res = await call(
+      "GET",
+      `/api/smart-files/folders?scopeType=${scopeType}&scopeId=${encodeURIComponent(scopeId)}`,
+    );
+    record(
+      why,
+      res.status === 200 && Array.isArray(res.json?.folders),
+      `status=${res.status} folders=${res.json?.folders?.length ?? "n/a"}`,
+    );
+  }
+
+  const noScopeId = await call("GET", "/api/smart-files/folders?scopeType=jurisdiction");
+  record(
+    "listFolders still requires a scopeId",
+    noScopeId.status === 400,
+    `status=${noScopeId.status}`,
+  );
+
+  const unknownScope = await call("GET", "/api/smart-files/folders?scopeType=nonsense&scopeId=x");
+  record(
+    "listFolders still refuses an unknown scope type",
+    unknownScope.status === 400,
+    `status=${unknownScope.status}`,
+  );
+}
+
 async function main() {
   process.stdout.write(`probe base=${base} nodeId=${NODE_ID} runTag=${runTag}\n\n`);
   process.stdout.write("--- tenant: five live slugs, unchanged ---\n");
@@ -273,6 +316,8 @@ async function main() {
   const inst = await instrumentRoundTrip();
   process.stdout.write("\n--- negative: the validator is real ---\n");
   await negativeChecks(inst?.folderId);
+  process.stdout.write("\n--- narrowing: listFolders validates instrument and nothing else ---\n");
+  await narrowingChecks();
 
   const failed = results.filter((r) => !r.ok);
   process.stdout.write(`\n${results.length - failed.length}/${results.length} checks passed\n`);

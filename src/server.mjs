@@ -144,7 +144,14 @@ async function handle(req, res) {
         });
         return;
       }
-      if (!scopeIdIsValid(scopeType, scopeId)) {
+      // Jurisdiction, tenant and site keep the behaviour they shipped with:
+      // a non-empty scopeId is the whole rule on this route, and an unknown id
+      // lists nothing rather than erroring. Identity already refuses a
+      // malformed id where one is built, so validating every scope here would
+      // widen the blast radius of this change for no gain. Only `instrument`,
+      // the scope this row adds, is validated. Ruled by the owning lane on
+      // review of PR #5, 2026-08-17.
+      if (scopeType === "instrument" && !scopeIdIsValid(scopeType, scopeId)) {
         json(res, 400, {
           error: "invalid_scope_id",
           message: `scopeId is not a valid ${scopeType} identifier`,
