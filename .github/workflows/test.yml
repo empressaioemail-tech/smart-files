@@ -1,0 +1,80 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+  roundtrip:
+    name: HTTP round trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: smartfiles_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Throwaway CI database. Never a Neon DSN, never cortex-prod.
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/smartfiles_ci
+      SMART_FILES_SERVICE_TOKEN: ci-round-trip-token
+      PORT: 8791
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Apply schema
+        run: |
+          set -euo pipefail
+          for f in sql/001_foundation.sql sql/002_rooms.sql \
+                   sql/003_fix_seed_folder_scope.sql sql/004_instrument_scope.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+            echo "applied $f"
+          done
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f scripts/ci_probe_seed.sql
+          echo "applied scripts/ci_probe_seed.sql"
+
+      - name: Round trip over the real HTTP routes
+        run: |
+          set -euo pipefail
+          node src/server.mjs &
+          SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          curl -sS --retry 30 --retry-delay 1 --retry-connrefused "http://127.0.0.1:$PORT/"
+          echo
+          SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" node scripts/scope_roundtrip_probe.mjs
+          kill $SRV
+          wait $SRV 2>/dev/null || true
+
+      - name: The absence enum stays two-valued
+        run: |
+          set -euo pipefail
+          if psql "$DATABASE_URL" -q -c \
+            "INSERT INTO smart_file_absence_determinations (entity_id, verdict, basis)
+             VALUES ('ci-guard', 'not-applicable', 'ci');" 2>/dev/null; then
+            echo "FAIL: smart_file_absence_determinations accepted not-applicable"
+            exit 1
+          fi
+          echo "PASS: not-applicable is still refused by the absence CHECK"

@@ -1,5 +1,10 @@
 import http from "node:http";
-import { QA_PERSONAS, resolvePersona } from "./actors.mjs";
+import { INSTRUMENT_SERVICE_ACTOR, QA_PERSONAS, resolvePersona } from "./actors.mjs";
+import {
+  SMART_FILE_SCOPE_TYPES,
+  scopeIdIsValid,
+  WRITABLE_SCOPE_TYPES,
+} from "./identity.mjs";
 import {
   createFolder,
   createShare,
@@ -71,6 +76,41 @@ function requirePersona(body, res) {
   return persona;
 }
 
+/**
+ * Resolve who and what a write is for.
+ *
+ * Absent or `tenant` scopeType keeps the persona rule exactly as it was: the
+ * QA persona supplies both the actor and the scopeId. A non-tenant writable
+ * scope names its scopeId in the body and writes as a service actor, because
+ * an instrument room belongs to a security-master node rather than to a
+ * person. Returns null after answering the request itself.
+ */
+function requireWriteScope(body, res) {
+  const scopeType = body.scopeType ? String(body.scopeType) : "tenant";
+  if (!WRITABLE_SCOPE_TYPES.includes(scopeType)) {
+    json(res, 400, {
+      error: "scope_not_writable",
+      message: `scopeType must be one of ${WRITABLE_SCOPE_TYPES.join(", ")}`,
+    });
+    return null;
+  }
+  if (scopeType === "tenant") {
+    const persona = requirePersona(body, res);
+    if (!persona) return null;
+    return { scopeType, scopeId: persona.orgId, orgId: persona.orgId, userId: persona.userId };
+  }
+  const scopeId = body.scopeId ? String(body.scopeId) : "";
+  if (!scopeIdIsValid(scopeType, scopeId)) {
+    json(res, 400, {
+      error: "invalid_scope_id",
+      message: `scopeId is not a valid ${scopeType} identifier`,
+      scopeType,
+    });
+    return null;
+  }
+  return { scopeType, scopeId, createdBy: INSTRUMENT_SERVICE_ACTOR };
+}
+
 async function handle(req, res) {
   const url = new URL(req.url || "/", "http://local");
   const path = decodeURIComponent(url.pathname);
@@ -97,8 +137,26 @@ async function handle(req, res) {
     if (req.method === "GET" && path === "/api/smart-files/folders") {
       const scopeType = url.searchParams.get("scopeType") || "";
       const scopeId = url.searchParams.get("scopeId") || "";
-      if (!["jurisdiction", "tenant", "site"].includes(scopeType) || !scopeId) {
-        json(res, 400, { error: "scopeType and scopeId are required" });
+      if (!SMART_FILE_SCOPE_TYPES.includes(scopeType) || !scopeId) {
+        json(res, 400, {
+          error: "scopeType and scopeId are required",
+          scopeTypes: SMART_FILE_SCOPE_TYPES,
+        });
+        return;
+      }
+      // Jurisdiction, tenant and site keep the behaviour they shipped with:
+      // a non-empty scopeId is the whole rule on this route, and an unknown id
+      // lists nothing rather than erroring. Identity already refuses a
+      // malformed id where one is built, so validating every scope here would
+      // widen the blast radius of this change for no gain. Only `instrument`,
+      // the scope this row adds, is validated. Ruled by the owning lane on
+      // review of PR #5, 2026-08-17.
+      if (scopeType === "instrument" && !scopeIdIsValid(scopeType, scopeId)) {
+        json(res, 400, {
+          error: "invalid_scope_id",
+          message: `scopeId is not a valid ${scopeType} identifier`,
+          scopeType,
+        });
         return;
       }
       const folders = await listFolders(scopeType, scopeId);
@@ -113,15 +171,14 @@ async function handle(req, res) {
 
     if (req.method === "POST" && path === "/api/smart-files/folders") {
       const body = await readJson(req);
-      const persona = requirePersona(body, res);
-      if (!persona) return;
+      const scope = requireWriteScope(body, res);
+      if (!scope) return;
       if (!body.label) {
         json(res, 400, { error: "label is required" });
         return;
       }
       const folder = await createFolder({
-        orgId: persona.orgId,
-        userId: persona.userId,
+        ...scope,
         label: String(body.label),
       });
       json(res, 201, { folder, servedAt: new Date().toISOString() });
@@ -172,16 +229,15 @@ async function handle(req, res) {
     const folderFiles = path.match(/^\/api\/smart-files\/folders\/(.+)\/files$/);
     if (req.method === "POST" && folderFiles) {
       const body = await readJson(req);
-      const persona = requirePersona(body, res);
-      if (!persona) return;
+      const scope = requireWriteScope(body, res);
+      if (!scope) return;
       if (!body.bytesBase64 || !body.title) {
         json(res, 400, { error: "title and bytesBase64 are required" });
         return;
       }
       const uploaded = await uploadFileToFolder({
+        ...scope,
         folderId: folderFiles[1],
-        orgId: persona.orgId,
-        userId: persona.userId,
         title: String(body.title),
         contentType: String(body.contentType || "application/octet-stream"),
         bytes: Buffer.from(String(body.bytesBase64), "base64"),

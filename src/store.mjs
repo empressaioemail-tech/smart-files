@@ -7,9 +7,11 @@ import {
   slugify,
 } from "./cid.mjs";
 import {
+  assertScopeId,
   buildSmartFileEntityId,
   DEFAULT_ACCESS_POLICY,
   parseSmartFileEntityId,
+  WRITABLE_SCOPE_TYPES,
 } from "./identity.mjs";
 
 const COUNTING_RULE =
@@ -27,6 +29,44 @@ export function getPool() {
     pool = new pg.Pool({ connectionString: url, max: 4 });
   }
   return pool;
+}
+
+/**
+ * Resolve the (scopeType, scopeId) pair a write lands in.
+ *
+ * Tenant writes are unchanged: the persona's orgId is the scopeId, and any
+ * non-empty slug is accepted, because live tenants are free-form strings.
+ * Instrument writes name their scope explicitly and are validated by the
+ * instrument rule in identity.mjs. Nothing else is writable through this
+ * service.
+ */
+export function resolveWriteScope({ scopeType, scopeId, orgId }) {
+  const type = scopeType || "tenant";
+  if (!WRITABLE_SCOPE_TYPES.includes(type)) {
+    const err = new Error(
+      `scopeType must be one of ${WRITABLE_SCOPE_TYPES.join(", ")} on the write path`,
+    );
+    err.status = 400;
+    throw err;
+  }
+  const id = type === "tenant" ? orgId : scopeId;
+  try {
+    assertScopeId(type, id);
+  } catch (cause) {
+    const err = new Error(cause.message);
+    err.status = 400;
+    throw err;
+  }
+  return { scopeType: type, scopeId: id };
+}
+
+function assertFolderInScope(folder, scope) {
+  if (folder.scopeType === scope.scopeType && folder.scopeId === scope.scopeId) return;
+  const err = new Error(
+    scope.scopeType === "tenant" ? "folder is not in this org" : "folder is not in this scope",
+  );
+  err.status = 403;
+  throw err;
 }
 
 function folderLabel(folderId) {
@@ -54,18 +94,19 @@ export async function listFolders(scopeType, scopeId) {
   }));
 }
 
-export async function createFolder({ orgId, userId, label }) {
+export async function createFolder({ orgId, userId, label, scopeType, scopeId, createdBy }) {
+  const scope = resolveWriteScope({ scopeType, scopeId, orgId });
   const slug = slugify(label);
   if (!slug) throw new Error("folder label must yield a slug");
-  const folderId = buildFolderId(orgId, slug);
-  const createdBy = actorKey(orgId, userId);
+  const folderId = buildFolderId(scope.scopeId, slug, scope.scopeType);
+  const actor = createdBy || actorKey(orgId, userId);
   const { rows } = await getPool().query(
     `INSERT INTO smart_file_folders (folder_id, scope_type, scope_id, label, created_by)
-     VALUES ($1, 'tenant', $2, $3, $4)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (folder_id) DO UPDATE
        SET label = EXCLUDED.label
      RETURNING folder_id, label, scope_type, scope_id, access_policy, created_by, created_at`,
-    [folderId, orgId, label.trim(), createdBy],
+    [folderId, scope.scopeType, scope.scopeId, label.trim(), actor],
   );
   const r = rows[0];
   return {
@@ -84,21 +125,21 @@ export async function uploadFileToFolder({
   folderId,
   orgId,
   userId,
+  scopeType,
+  scopeId,
+  createdBy,
   title,
   contentType,
   bytes,
 }) {
+  const scope = resolveWriteScope({ scopeType, scopeId, orgId });
   const folder = await getFolder(folderId);
   if (!folder) {
     const err = new Error("folder_not_found");
     err.status = 404;
     throw err;
   }
-  if (folder.scopeType !== "tenant" || folder.scopeId !== orgId) {
-    const err = new Error("folder is not in this org");
-    err.status = 403;
-    throw err;
-  }
+  assertFolderInScope(folder, scope);
   const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   if (buf.length === 0) throw new Error("empty upload");
   if (buf.length > 8 * 1024 * 1024) throw new Error("upload exceeds 8MB QA cap");
@@ -106,11 +147,11 @@ export async function uploadFileToFolder({
   const baseSlug = slugify(title) || `file-${Date.now()}`;
   let docSlug = baseSlug;
   let entityId = buildSmartFileEntityId({
-    scopeType: "tenant",
-    scopeId: orgId,
+    scopeType: scope.scopeType,
+    scopeId: scope.scopeId,
     docSlug,
   });
-  const createdBy = actorKey(orgId, userId);
+  const actor = createdBy || actorKey(orgId, userId);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -128,17 +169,25 @@ export async function uploadFileToFolder({
       if (exists.rowCount === 0) break;
       docSlug = `${baseSlug}-${i}`;
       entityId = buildSmartFileEntityId({
-        scopeType: "tenant",
-        scopeId: orgId,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
         docSlug,
       });
     }
     const doc = await client.query(
       `INSERT INTO smart_file_documents
          (entity_id, scope_type, scope_id, doc_slug, title, access_policy, current_version, created_by)
-       VALUES ($1, 'tenant', $2, $3, $4, $5, 1, $6)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
        RETURNING *`,
-      [entityId, orgId, docSlug, title.trim() || docSlug, DEFAULT_ACCESS_POLICY, createdBy],
+      [
+        entityId,
+        scope.scopeType,
+        scope.scopeId,
+        docSlug,
+        title.trim() || docSlug,
+        DEFAULT_ACCESS_POLICY,
+        actor,
+      ],
     );
     const documentId = doc.rows[0].id;
     await client.query(
@@ -152,8 +201,8 @@ export async function uploadFileToFolder({
         contentType || "application/octet-stream",
         buf.length,
         JSON.stringify({
-          sourceLabel: "qa-upload",
-          uploadedBy: createdBy,
+          sourceLabel: scope.scopeType === "instrument" ? "instrument-write" : "qa-upload",
+          uploadedBy: actor,
         }),
       ],
     );
@@ -161,7 +210,7 @@ export async function uploadFileToFolder({
       `INSERT INTO smart_file_placements
          (document_id, document_entity_id, target_type, target_id, placed_by)
        VALUES ($1, $2, 'folder', $3, $4)`,
-      [documentId, entityId, folderId, createdBy],
+      [documentId, entityId, folderId, actor],
     );
     await client.query("COMMIT");
     return {
@@ -202,18 +251,15 @@ export async function getFolder(folderId) {
   };
 }
 
-export async function createShare({ folderId, orgId, userId }) {
+export async function createShare({ folderId, orgId, userId, scopeType, scopeId }) {
+  const scope = resolveWriteScope({ scopeType, scopeId, orgId });
   const folder = await getFolder(folderId);
   if (!folder) {
     const err = new Error("folder_not_found");
     err.status = 404;
     throw err;
   }
-  if (folder.scopeType !== "tenant" || folder.scopeId !== orgId) {
-    const err = new Error("folder is not in this org");
-    err.status = 403;
-    throw err;
-  }
+  assertFolderInScope(folder, scope);
   const token = shareToken();
   await getPool().query(
     `INSERT INTO smart_file_shares (token, folder_id, created_by)

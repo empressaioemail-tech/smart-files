@@ -16,7 +16,7 @@ CREATE TABLE smart_file_documents (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT smart_file_documents_scope_type_check
-    CHECK (scope_type IN ('jurisdiction', 'tenant', 'site')),
+    CHECK (scope_type IN ('jurisdiction', 'tenant', 'site', 'instrument')),
   CONSTRAINT smart_file_documents_access_policy_check
     CHECK (access_policy IN (
       'public-free',
@@ -65,7 +65,7 @@ CREATE TABLE smart_file_placements (
   placed_at timestamptz NOT NULL DEFAULT now(),
   placed_by text,
   CONSTRAINT smart_file_placements_target_type_check
-    CHECK (target_type IN ('folder', 'parcel', 'project', 'asset', 'permit', 'meeting'))
+    CHECK (target_type IN ('folder', 'parcel', 'project', 'asset', 'permit', 'meeting', 'instrument'))
 );
 
 CREATE UNIQUE INDEX smart_file_placements_uniq

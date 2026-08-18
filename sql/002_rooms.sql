@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS smart_file_folders (
   created_by text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT smart_file_folders_scope_type_check
-    CHECK (scope_type IN ('jurisdiction', 'tenant', 'site')),
+    CHECK (scope_type IN ('jurisdiction', 'tenant', 'site', 'instrument')),
   CONSTRAINT smart_file_folders_access_policy_check
     CHECK (access_policy IN (
       'public-free',

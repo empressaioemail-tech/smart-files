@@ -17,3 +17,10 @@ export function resolvePersona(orgId, userId) {
 export function actorKey(orgId, userId) {
   return `${orgId}/${userId}`;
 }
+
+/**
+ * Writer of record for machine-scoped writes. Instrument rooms are filled by
+ * the twin pipeline against a security-master node, not by a QA persona, so
+ * they carry a named service actor instead of an orgId/userId pair.
+ */
+export const INSTRUMENT_SERVICE_ACTOR = actorKey("instrument", "service");
