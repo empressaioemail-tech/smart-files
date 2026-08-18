@@ -20,8 +20,12 @@ export function shareToken() {
   return randomBytes(18).toString("base64url");
 }
 
-export function buildFolderId(orgId, slug) {
+/**
+ * Folder ids mirror document identity: `folder:<scopeType>:<scopeId>:<slug>`.
+ * scopeType defaults to `tenant` so every existing caller and id is unchanged.
+ */
+export function buildFolderId(scopeId, slug, scopeType = "tenant") {
   const s = slugify(slug);
   if (!s) throw new Error("folder slug is not a slug");
-  return `folder:tenant:${orgId}:${s}`;
+  return `folder:${scopeType}:${scopeId}:${s}`;
 }
