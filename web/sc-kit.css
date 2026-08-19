@@ -9,7 +9,7 @@
 :root, .sc-light {
   --sc-canvas:#EEF1F4; --sc-surface:#FFFFFF; --sc-surface-2:#F6F8FA; --sc-surface-3:#E9EEF2;
   --sc-line-faint:#E4E9EE; --sc-line:#D2DAE1; --sc-line-strong:#AEBAC5;
-  --sc-ink:#101820; --sc-ink-2:#46586A; --sc-ink-3:#6C7E8E;
+  --sc-ink:#101820; --sc-ink-2:#46586A; --sc-ink-3:#576672;
   --sc-accent:#0B6A7B; --sc-accent-hi:#095563; --sc-accent-wash:#DFEFF2; --sc-on-accent:#FFFFFF;
   --sc-focus:#0B6A7B;
   --sc-ok:#2F7A52;         --sc-ok-wash:#E3F0E8;
@@ -17,7 +17,7 @@
   --sc-warn:#9A5B08;       --sc-warn-wash:#FBEEDA;
   --sc-crit:#AF2A22;       --sc-crit-wash:#FBE6E4;
   --sc-restricted:#5347B5; --sc-restricted-wash:#EBE9F8;
-  --sc-quiet:#6C7E8E;      --sc-quiet-wash:#E9EEF2;
+  --sc-quiet:#576672;      --sc-quiet-wash:#E9EEF2;
   --sc-atom:#177F78;        --sc-atom-wash:#DFF2F0;
   --sc-e1:0 1px 2px rgba(16,24,32,.07);
   --sc-e2:0 6px 16px -4px rgba(16,24,32,.14);
@@ -29,7 +29,7 @@
   :root:not([data-theme="light"]) {
     --sc-canvas:#0C1116; --sc-surface:#12191F; --sc-surface-2:#18212A; --sc-surface-3:#1E2833;
     --sc-line-faint:#1D262F; --sc-line:#29343F; --sc-line-strong:#3B4854;
-    --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#7B8B99;
+    --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#8594A1;
     --sc-accent:#4EAFC2; --sc-accent-hi:#6CC6D7; --sc-accent-wash:rgba(78,175,194,.13); --sc-on-accent:#04222A;
     --sc-focus:#7FCFDF;
     --sc-ok:#55BE86;         --sc-ok-wash:rgba(85,190,134,.13);
@@ -37,7 +37,7 @@
     --sc-warn:#DDA14C;       --sc-warn-wash:rgba(221,161,76,.14);
     --sc-crit:#EF7B72;       --sc-crit-wash:rgba(239,123,114,.14);
     --sc-restricted:#A092EE; --sc-restricted-wash:rgba(160,146,238,.14);
-    --sc-quiet:#7B8B99;      --sc-quiet-wash:rgba(123,139,153,.14);
+    --sc-quiet:#8594A1;      --sc-quiet-wash:rgba(123,139,153,.14);
     --sc-atom:#4CC9C0;        --sc-atom-wash:rgba(76,201,192,.14);
     --sc-e1:0 1px 2px rgba(0,0,0,.40);
     --sc-e2:0 8px 20px -6px rgba(0,0,0,.55);
@@ -49,7 +49,7 @@
 :root[data-theme="dark"], .sc-dark {
   --sc-canvas:#0C1116; --sc-surface:#12191F; --sc-surface-2:#18212A; --sc-surface-3:#1E2833;
   --sc-line-faint:#1D262F; --sc-line:#29343F; --sc-line-strong:#3B4854;
-  --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#7B8B99;
+  --sc-ink:#E6EDF3; --sc-ink-2:#A2B2C0; --sc-ink-3:#8594A1;
   --sc-accent:#4EAFC2; --sc-accent-hi:#6CC6D7; --sc-accent-wash:rgba(78,175,194,.13); --sc-on-accent:#04222A;
   --sc-focus:#7FCFDF;
   --sc-ok:#55BE86;         --sc-ok-wash:rgba(85,190,134,.13);
@@ -57,7 +57,7 @@
   --sc-warn:#DDA14C;       --sc-warn-wash:rgba(221,161,76,.14);
   --sc-crit:#EF7B72;       --sc-crit-wash:rgba(239,123,114,.14);
   --sc-restricted:#A092EE; --sc-restricted-wash:rgba(160,146,238,.14);
-  --sc-quiet:#7B8B99;      --sc-quiet-wash:rgba(123,139,153,.14);
+  --sc-quiet:#8594A1;      --sc-quiet-wash:rgba(123,139,153,.14);
   --sc-atom:#4CC9C0;        --sc-atom-wash:rgba(76,201,192,.14);
   --sc-e1:0 1px 2px rgba(0,0,0,.40);
   --sc-e2:0 8px 20px -6px rgba(0,0,0,.55);
