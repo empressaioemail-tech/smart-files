@@ -494,3 +494,20 @@ html[data-embed="1"] .shell {
   .shell-body { grid-template-columns: 1fr; }
   .shell-nav { border-right: 0; border-bottom: 1px solid var(--sc-line); }
 }
+
+/* a11y: visually hidden, still in the accessibility tree. A placeholder is not a
+   label - it disappears the moment the field has content. */
+.vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* a11y: WCAG 2.1 AA 1.4.10 Reflow. At 320 CSS pixels the top bar could not fit
+   its brand block and its search box on one row, and pushed the whole page into
+   horizontal scrolling. Measured overflow was 41px on the standalone surface;
+   the embedded surface hides this bar and was already at 0. Let the bar wrap and
+   give the search its own full-width row rather than shrinking it to nothing. */
+@media (max-width: 560px) {
+  .shell-top { flex-wrap: wrap; height: auto; padding-top: var(--sc-2, 6px); padding-bottom: var(--sc-2, 6px); }
+  .shell-top .searchwrap { flex-basis: 100%; order: 10; }
+  .shell-top .brandcity span { display: none; }
+}
+.searchwrap .inp { min-width: 0; width: 100%; }
