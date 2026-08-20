@@ -65,7 +65,8 @@
               <span class="pill p-restricted" id="access-pill"><span class="gl">●</span> Tenant private</span>
               <span class="fill"></span>
               <form id="create-folder">
-                <input class="inp" name="label" placeholder="New folder name" required />
+                <label class="vh" for="new-folder-name">New folder name</label>
+                <input class="inp" id="new-folder-name" name="label" placeholder="New folder name" required />
                 <button type="submit" class="btn btn-sm">New folder</button>
               </form>
               <button type="button" class="btn btn-sm" id="refresh">Refresh</button>
@@ -74,7 +75,8 @@
               <button type="button" class="btn btn-primary btn-sm" id="share">Share</button>
             </div>
             <form id="upload" hidden>
-              <input type="file" name="file" required />
+              <label class="vh" for="upload-file">Choose a file to upload</label>
+              <input type="file" id="upload-file" name="file" required />
             </form>
           </header>
 
