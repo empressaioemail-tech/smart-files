@@ -300,6 +300,25 @@ export async function getBlob(contentCid) {
   return rows[0] ?? null;
 }
 
+/**
+ * Every distinct (scopeType, scopeId) a document version cites this blob
+ * under. A blob is content-addressed, so in principle more than one document
+ * -- even in different scopes -- can point at the same bytes; the caller
+ * needs read access to at least one of them. An orphan blob (no version
+ * references it) returns an empty array, which the caller-scope gate treats
+ * as unreadable rather than defaulting it open.
+ */
+export async function getBlobScopes(contentCid) {
+  const { rows } = await getPool().query(
+    `SELECT DISTINCT d.scope_type, d.scope_id
+       FROM smart_file_versions v
+       JOIN smart_file_documents d ON d.id = v.document_id
+      WHERE v.content_cid = $1`,
+    [contentCid],
+  );
+  return rows.map((r) => ({ scopeType: r.scope_type, scopeId: r.scope_id }));
+}
+
 export async function listFolderFiles(folderId) {
   const { rows } = await getPool().query(
     `SELECT d.entity_id, d.title, d.access_policy, d.current_version,

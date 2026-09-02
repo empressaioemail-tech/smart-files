@@ -37,6 +37,15 @@ jobs:
       # Throwaway CI database. Never a Neon DSN, never cortex-prod.
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/smartfiles_ci
       SMART_FILES_SERVICE_TOKEN: ci-round-trip-token
+      # scope_roundtrip_probe.mjs acts as every live tenant with one token, by
+      # design (it is CI's own disposable backend identity, not a real
+      # caller) -- the blanket grant keeps that probe's existing behaviour
+      # unchanged. read_scope_probe.mjs additionally proves the G-106 gate
+      # with two narrowly-scoped tokens that are NOT granted "*".
+      SMART_FILES_SERVICE_TOKENS: >-
+        [{"token":"ci-round-trip-token","grants":[{"scopeType":"*","scopeId":"*"}]},
+        {"token":"ci-read-scope-match-token","grants":[{"scopeType":"tenant","scopeId":"template-city"}]},
+        {"token":"ci-read-scope-wrong-token","grants":[{"scopeType":"tenant","scopeId":"acme"}]}]
       PORT: 8791
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +74,10 @@ jobs:
           curl -sS --retry 30 --retry-delay 1 --retry-connrefused "http://127.0.0.1:$PORT/"
           echo
           SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" node scripts/scope_roundtrip_probe.mjs
+          SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" \
+            MATCH_TOKEN=ci-read-scope-match-token \
+            WRONG_TOKEN=ci-read-scope-wrong-token \
+            node scripts/read_scope_probe.mjs
           kill $SRV
           wait $SRV 2>/dev/null || true
 
