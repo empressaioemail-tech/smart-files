@@ -10,7 +10,9 @@ import {
   assertScopeId,
   buildSmartFileEntityId,
   DEFAULT_ACCESS_POLICY,
+  isValidDocSlug,
   parseSmartFileEntityId,
+  validateProvenance,
   WRITABLE_SCOPE_TYPES,
 } from "./identity.mjs";
 
@@ -131,6 +133,8 @@ export async function uploadFileToFolder({
   title,
   contentType,
   bytes,
+  docSlug: explicitDocSlug,
+  provenance: rawProvenance,
 }) {
   const scope = resolveWriteScope({ scopeType, scopeId, orgId });
   const folder = await getFolder(folderId);
@@ -144,14 +148,29 @@ export async function uploadFileToFolder({
   if (buf.length === 0) throw new Error("empty upload");
   if (buf.length > 8 * 1024 * 1024) throw new Error("upload exceeds 8MB QA cap");
   const cid = contentCidFromBytes(buf);
-  const baseSlug = slugify(title) || `file-${Date.now()}`;
-  let docSlug = baseSlug;
-  let entityId = buildSmartFileEntityId({
-    scopeType: scope.scopeType,
-    scopeId: scope.scopeId,
-    docSlug,
-  });
   const actor = createdBy || actorKey(orgId, userId);
+
+  // G-107 / transaction contract: a caller that opts into full provenance
+  // gets it validated strictly (a missing key refuses the write, never
+  // defaults). A caller that passes nothing keeps the pre-existing
+  // {sourceLabel, uploadedBy} shape unchanged -- this is additive, not a
+  // replacement, so no existing caller is broken by this change.
+  let provenanceRecord;
+  if (rawProvenance) {
+    try {
+      provenanceRecord = validateProvenance(rawProvenance);
+    } catch (cause) {
+      const err = new Error(cause.message);
+      err.status = 400;
+      throw err;
+    }
+  } else {
+    provenanceRecord = {
+      sourceLabel: scope.scopeType === "instrument" ? "instrument-write" : "qa-upload",
+      uploadedBy: actor,
+    };
+  }
+
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -161,6 +180,128 @@ export async function uploadFileToFolder({
        ON CONFLICT (content_cid) DO NOTHING`,
       [cid, contentType || "application/octet-stream", buf.length, buf],
     );
+
+    if (explicitDocSlug) {
+      // A caller (plan review, for a submittal) that names its own docSlug
+      // wants it STABLE ACROSS REVISIONS, per the transaction contract: the
+      // same slug on a second upload is a new VERSION of the same document,
+      // never a counter-suffixed sibling document. This is the "built and
+      // starved" version machinery the contract names -- wiring it here is
+      // in scope because a docSlug that only works once is not stable.
+      if (!isValidDocSlug(explicitDocSlug)) {
+        const err = new Error("docSlug is not a valid slug");
+        err.status = 400;
+        throw err;
+      }
+      const entityId = buildSmartFileEntityId({
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        docSlug: explicitDocSlug,
+      });
+      const existing = await client.query(
+        `SELECT id, current_version FROM smart_file_documents WHERE entity_id = $1`,
+        [entityId],
+      );
+      if (existing.rowCount > 0) {
+        const documentId = existing.rows[0].id;
+        const nextVersion = existing.rows[0].current_version + 1;
+        await client.query(
+          `INSERT INTO smart_file_versions
+             (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+          [
+            documentId,
+            entityId,
+            nextVersion,
+            cid,
+            contentType || "application/octet-stream",
+            buf.length,
+            JSON.stringify(provenanceRecord),
+          ],
+        );
+        await client.query(
+          `UPDATE smart_file_documents SET current_version = $1 WHERE id = $2`,
+          [nextVersion, documentId],
+        );
+        await client.query(
+          `INSERT INTO smart_file_placements
+             (document_id, document_entity_id, target_type, target_id, placed_by)
+           VALUES ($1, $2, 'folder', $3, $4)
+           ON CONFLICT (document_id, target_type, target_id) DO NOTHING`,
+          [documentId, entityId, folderId, actor],
+        );
+        await client.query("COMMIT");
+        return {
+          entityId,
+          title: title?.trim() || explicitDocSlug,
+          accessPolicy: DEFAULT_ACCESS_POLICY,
+          currentVersion: nextVersion,
+          contentCid: cid,
+          contentType: contentType || "application/octet-stream",
+          byteSize: buf.length,
+          folderId,
+          revision: true,
+        };
+      }
+      const doc = await client.query(
+        `INSERT INTO smart_file_documents
+           (entity_id, scope_type, scope_id, doc_slug, title, access_policy, current_version, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
+         RETURNING *`,
+        [
+          entityId,
+          scope.scopeType,
+          scope.scopeId,
+          explicitDocSlug,
+          title?.trim() || explicitDocSlug,
+          DEFAULT_ACCESS_POLICY,
+          actor,
+        ],
+      );
+      const documentId = doc.rows[0].id;
+      await client.query(
+        `INSERT INTO smart_file_versions
+           (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
+         VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb)`,
+        [
+          documentId,
+          entityId,
+          cid,
+          contentType || "application/octet-stream",
+          buf.length,
+          JSON.stringify(provenanceRecord),
+        ],
+      );
+      await client.query(
+        `INSERT INTO smart_file_placements
+           (document_id, document_entity_id, target_type, target_id, placed_by)
+         VALUES ($1, $2, 'folder', $3, $4)
+         ON CONFLICT (document_id, target_type, target_id) DO NOTHING`,
+        [documentId, entityId, folderId, actor],
+      );
+      await client.query("COMMIT");
+      return {
+        entityId,
+        title: doc.rows[0].title,
+        accessPolicy: doc.rows[0].access_policy,
+        currentVersion: 1,
+        contentCid: cid,
+        contentType: contentType || "application/octet-stream",
+        byteSize: buf.length,
+        folderId,
+        revision: false,
+      };
+    }
+
+    // Legacy path (no explicit docSlug): title-derived slug with a counter
+    // loop on collision, unchanged from before this pass.
+    const baseSlug = slugify(title) || `file-${Date.now()}`;
+    let docSlug = baseSlug;
+    let entityId = buildSmartFileEntityId({
+      scopeType: scope.scopeType,
+      scopeId: scope.scopeId,
+      docSlug,
+    });
     for (let i = 2; i < 20; i += 1) {
       const exists = await client.query(
         `SELECT 1 FROM smart_file_documents WHERE entity_id = $1`,
@@ -200,10 +341,7 @@ export async function uploadFileToFolder({
         cid,
         contentType || "application/octet-stream",
         buf.length,
-        JSON.stringify({
-          sourceLabel: scope.scopeType === "instrument" ? "instrument-write" : "qa-upload",
-          uploadedBy: actor,
-        }),
+        JSON.stringify(provenanceRecord),
       ],
     );
     await client.query(
@@ -222,6 +360,7 @@ export async function uploadFileToFolder({
       contentType: contentType || "application/octet-stream",
       byteSize: buf.length,
       folderId,
+      revision: false,
     };
   } catch (err) {
     await client.query("ROLLBACK");

@@ -78,6 +78,7 @@ jobs:
             MATCH_TOKEN=ci-read-scope-match-token \
             WRONG_TOKEN=ci-read-scope-wrong-token \
             node scripts/read_scope_probe.mjs
+          SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" node scripts/submittal_upload_probe.mjs
           kill $SRV
           wait $SRV 2>/dev/null || true
 

@@ -11,8 +11,11 @@ import {
   identityAllowsAnyScope,
   identityAllowsScope,
   identityHasBlanketGrant,
+  isValidDocSlug,
   parseServiceIdentities,
+  PROVENANCE_SOURCE_KINDS,
   resolveCallerIdentity,
+  validateProvenance,
 } from "./identity.mjs";
 
 test("roundtrip jurisdiction", () => {
@@ -288,4 +291,53 @@ test("identityAllowsAnyScope: an unknown scope (empty candidate list) refuses wi
     ]),
     true,
   );
+});
+
+// --- G-107: submittal docSlug + provenance ------------------------------------
+
+test("isValidDocSlug: same alphabet as the entityId docSlug segment", () => {
+  assert.equal(isValidDocSlug("eng-123:cover-letter"), false, "colons are not in the slug alphabet");
+  assert.equal(isValidDocSlug("eng-123--cover-letter"), true);
+  assert.equal(isValidDocSlug("Eng-123"), false, "must start lowercase alnum");
+  assert.equal(isValidDocSlug(""), false);
+  assert.equal(isValidDocSlug(undefined), false);
+});
+
+test("validateProvenance: all five keys required, missing key refuses rather than defaults", () => {
+  const full = {
+    capturedBy: "template-city/staff",
+    capturedAt: "2026-09-02T15:00:00.000Z",
+    sourceKind: "staff-upload",
+    originalFilename: "site-plan.pdf",
+    declaredRole: "Applicant's engineer of record",
+  };
+  assert.deepEqual(validateProvenance(full), full);
+
+  for (const key of Object.keys(full)) {
+    const missing = { ...full };
+    delete missing[key];
+    assert.throws(() => validateProvenance(missing), new RegExp(`provenance\\.${key} is required`));
+  }
+  assert.throws(() => validateProvenance(null), /provenance must be an object/);
+});
+
+test("validateProvenance: sourceKind is the closed set, capturedAt must parse", () => {
+  const base = {
+    capturedBy: "a",
+    capturedAt: "2026-09-02T15:00:00.000Z",
+    sourceKind: "staff-upload",
+    originalFilename: "f.pdf",
+    declaredRole: "staff",
+  };
+  assert.throws(
+    () => validateProvenance({ ...base, sourceKind: "not-a-real-kind" }),
+    /sourceKind must be one of/,
+  );
+  assert.throws(
+    () => validateProvenance({ ...base, capturedAt: "not-a-date" }),
+    /capturedAt must be an ISO-8601 timestamp/,
+  );
+  for (const kind of PROVENANCE_SOURCE_KINDS) {
+    assert.equal(validateProvenance({ ...base, sourceKind: kind }).sourceKind, kind);
+  }
 });

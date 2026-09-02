@@ -22,6 +22,10 @@ export const DEFAULT_ACCESS_POLICY = "tenant-private";
 const JURISDICTION_FIPS_RE = /^[0-9]{5,10}$/;
 const DOC_SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/;
 
+export function isValidDocSlug(docSlug) {
+  return DOC_SLUG_RE.test(String(docSlug ?? ""));
+}
+
 /**
  * A security-master node identifier: `sec_` or `iss_` followed by a ULID in
  * canonical Crockford base32, which is 26 uppercase characters drawn from an
@@ -165,6 +169,55 @@ export function identityAllowsScope(identity, scopeType, scopeId) {
       (g.scopeType === ALL_SCOPES || g.scopeType === scopeType) &&
       (g.scopeId === ALL_SCOPES || g.scopeId === scopeId),
   );
+}
+
+/**
+ * G-107 / transaction-contract provenance (_inbox/2026-08-24_govtech_transaction_contract.md,
+ * "Provenance stops being free jsonb"). Five keys, all required: a missing
+ * one refuses the write rather than defaulting. Callers that do not pass a
+ * `provenance` object at all keep the pre-existing {sourceLabel, uploadedBy}
+ * shape in store.mjs -- this validator only applies once a caller opts in.
+ */
+export const PROVENANCE_SOURCE_KINDS = [
+  "staff-upload",
+  "applicant-upload",
+  "feed",
+  "instrument-write",
+];
+
+const PROVENANCE_REQUIRED_STRING_KEYS = [
+  "capturedBy",
+  "capturedAt",
+  "sourceKind",
+  "originalFilename",
+  "declaredRole",
+];
+
+export function validateProvenance(provenance) {
+  if (!provenance || typeof provenance !== "object") {
+    throw new Error("provenance must be an object");
+  }
+  for (const key of PROVENANCE_REQUIRED_STRING_KEYS) {
+    const v = provenance[key];
+    if (typeof v !== "string" || !v.trim()) {
+      throw new Error(`provenance.${key} is required`);
+    }
+  }
+  if (!PROVENANCE_SOURCE_KINDS.includes(provenance.sourceKind)) {
+    throw new Error(
+      `provenance.sourceKind must be one of ${PROVENANCE_SOURCE_KINDS.join(", ")}`,
+    );
+  }
+  if (Number.isNaN(Date.parse(provenance.capturedAt))) {
+    throw new Error("provenance.capturedAt must be an ISO-8601 timestamp");
+  }
+  return {
+    capturedBy: provenance.capturedBy,
+    capturedAt: provenance.capturedAt,
+    sourceKind: provenance.sourceKind,
+    originalFilename: provenance.originalFilename,
+    declaredRole: provenance.declaredRole,
+  };
 }
 
 /**
