@@ -6,6 +6,7 @@ export const QA_PERSONAS = [
   { orgId: "icc-demo", userId: "reviewer", label: "Empressa reviewer / icc-demo" },
   { orgId: "icc-demo", userId: "observer", label: "ICC observer / icc-demo" },
   { orgId: "template-city", userId: "g71-calendar", label: "Template city clerk / calendar" },
+  { orgId: "template-city", userId: "staff", label: "Development services staff / template-city" },
 ];
 
 export function resolvePersona(orgId, userId) {

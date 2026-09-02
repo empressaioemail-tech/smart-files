@@ -289,6 +289,8 @@ async function handle(req, res) {
         title: String(body.title),
         contentType: String(body.contentType || "application/octet-stream"),
         bytes: Buffer.from(String(body.bytesBase64), "base64"),
+        docSlug: body.docSlug ? String(body.docSlug) : undefined,
+        provenance: body.provenance && typeof body.provenance === "object" ? body.provenance : undefined,
       });
       json(res, 201, { file: uploaded, servedAt: new Date().toISOString() });
       return;
