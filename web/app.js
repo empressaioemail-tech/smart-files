@@ -553,6 +553,21 @@ function refuseOAuth() {
   toast("Connected Drive starts Not connected on this demo. No account connection is faked. Paste a share link.");
 }
 
+/**
+ * G-114: this UI is embedded by Dashboards for a specific city, but with no
+ * cityKey wired through, the persona <select> silently defaulted to its
+ * first OPTION (Joe/Acme) regardless of which city the embed was actually
+ * for -- a live, confirmed instance of "carries no city-scoping at all".
+ * cityKey now arrives on the embed URL (smartcity-dashboards/src/mounts.mjs);
+ * this reads it back and, when a persona for that org exists, selects it
+ * instead of leaving the browser's first-option default in place. A city
+ * with no matching persona yet (any city besides template-city today) is
+ * left on the default rather than a fabricated match.
+ */
+function cityKeyParam() {
+  return new URL(location.href).searchParams.get("cityKey");
+}
+
 function boot() {
   applyEmbedChrome();
   const sel = $("persona");
@@ -562,6 +577,9 @@ function boot() {
     o.textContent = p.label;
     sel.append(o);
   }
+  const cityKey = String(cityKeyParam() || "").trim();
+  const cityPersona = cityKey && PERSONAS.find((p) => p.orgId === cityKey);
+  if (cityPersona) sel.value = `${cityPersona.orgId}/${cityPersona.userId}`;
   const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
   const share = hash.get("share");
   if (share) {
