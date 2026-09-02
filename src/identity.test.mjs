@@ -8,6 +8,11 @@ import {
   SMART_FILE_SCOPE_TYPES,
   scopeIdIsValid,
   WRITABLE_SCOPE_TYPES,
+  identityAllowsAnyScope,
+  identityAllowsScope,
+  identityHasBlanketGrant,
+  parseServiceIdentities,
+  resolveCallerIdentity,
 } from "./identity.mjs";
 
 test("roundtrip jurisdiction", () => {
@@ -185,4 +190,102 @@ test("jurisdiction keeps the FIPS rule it already had", () => {
   assert.equal(scopeIdIsValid("jurisdiction", "48021"), true);
   assert.equal(scopeIdIsValid("jurisdiction", "bastrop"), false);
   assert.equal(scopeIdIsValid("instrument", "48021"), false);
+});
+
+// --- G-106: the read-path caller scope model ---------------------------------
+
+test("parseServiceIdentities: empty/absent env yields no identities", () => {
+  assert.deepEqual(parseServiceIdentities(undefined), []);
+  assert.deepEqual(parseServiceIdentities(""), []);
+});
+
+test("parseServiceIdentities: rejects malformed JSON, non-array, and missing fields", () => {
+  assert.throws(() => parseServiceIdentities("not json"), /not valid JSON/);
+  assert.throws(() => parseServiceIdentities("{}"), /must be a JSON array/);
+  assert.throws(
+    () => parseServiceIdentities(JSON.stringify([{ token: "t" }])),
+    /needs a token and a non-empty grants array/,
+  );
+  assert.throws(
+    () => parseServiceIdentities(JSON.stringify([{ token: "t", grants: [{ scopeType: "tenant" }] }])),
+    /needs scopeType and scopeId/,
+  );
+});
+
+test("parseServiceIdentities: parses a well-formed grant list", () => {
+  const identities = parseServiceIdentities(
+    JSON.stringify([
+      { token: "tok-a", grants: [{ scopeType: "tenant", scopeId: "template-city" }] },
+      { token: "tok-b", grants: [{ scopeType: "*", scopeId: "*" }] },
+    ]),
+  );
+  assert.equal(identities.length, 2);
+  assert.equal(identities[0].token, "tok-a");
+  assert.deepEqual(identities[0].grants, [{ scopeType: "tenant", scopeId: "template-city" }]);
+});
+
+test("resolveCallerIdentity: no token, unknown token, and empty identity list all resolve null", () => {
+  const identities = parseServiceIdentities(
+    JSON.stringify([{ token: "tok-a", grants: [{ scopeType: "tenant", scopeId: "acme" }] }]),
+  );
+  assert.equal(resolveCallerIdentity("", identities), null);
+  assert.equal(resolveCallerIdentity("tok-nope", identities), null);
+  assert.equal(resolveCallerIdentity("tok-a", []), null);
+  assert.ok(resolveCallerIdentity("tok-a", identities));
+});
+
+test("identityAllowsScope: exact match, wrong tenant, and per-field wildcards", () => {
+  const [scoped] = parseServiceIdentities(
+    JSON.stringify([
+      { token: "t", grants: [{ scopeType: "tenant", scopeId: "template-city" }] },
+    ]),
+  );
+  assert.equal(identityAllowsScope(scoped, "tenant", "template-city"), true);
+  assert.equal(identityAllowsScope(scoped, "tenant", "acme"), false);
+  assert.equal(identityAllowsScope(scoped, "instrument", "template-city"), false);
+  assert.equal(identityAllowsScope(null, "tenant", "template-city"), false);
+
+  const [wildcardId] = parseServiceIdentities(
+    JSON.stringify([{ token: "t", grants: [{ scopeType: "tenant", scopeId: "*" }] }]),
+  );
+  assert.equal(identityAllowsScope(wildcardId, "tenant", "acme"), true);
+  assert.equal(identityAllowsScope(wildcardId, "tenant", "template-city"), true);
+  assert.equal(identityAllowsScope(wildcardId, "instrument", "acme"), false);
+});
+
+test("identityHasBlanketGrant: only an explicit */* grant qualifies", () => {
+  const [blanket] = parseServiceIdentities(
+    JSON.stringify([{ token: "t", grants: [{ scopeType: "*", scopeId: "*" }] }]),
+  );
+  const [narrow] = parseServiceIdentities(
+    JSON.stringify([{ token: "t", grants: [{ scopeType: "tenant", scopeId: "*" }] }]),
+  );
+  assert.equal(identityHasBlanketGrant(blanket), true);
+  assert.equal(identityHasBlanketGrant(narrow), false);
+  assert.equal(identityHasBlanketGrant(null), false);
+});
+
+test("identityAllowsAnyScope: an unknown scope (empty candidate list) refuses without a blanket grant", () => {
+  const [scoped] = parseServiceIdentities(
+    JSON.stringify([{ token: "t", grants: [{ scopeType: "tenant", scopeId: "template-city" }] }]),
+  );
+  const [blanket] = parseServiceIdentities(
+    JSON.stringify([{ token: "t", grants: [{ scopeType: "*", scopeId: "*" }] }]),
+  );
+  // The defect this closes: no caller, scoped or not, reads an orphaned or
+  // unparseable resource by default.
+  assert.equal(identityAllowsAnyScope(scoped, []), false);
+  assert.equal(identityAllowsAnyScope(null, []), false);
+  assert.equal(identityAllowsAnyScope(blanket, []), true);
+  assert.equal(
+    identityAllowsAnyScope(scoped, [{ scopeType: "tenant", scopeId: "acme" }]),
+    false,
+  );
+  assert.equal(
+    identityAllowsAnyScope(scoped, [
+      { scopeType: "tenant", scopeId: "acme" },
+      { scopeType: "tenant", scopeId: "template-city" },
+    ]),
+    true,
+  );
 });

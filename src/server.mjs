@@ -1,6 +1,10 @@
 import http from "node:http";
 import { INSTRUMENT_SERVICE_ACTOR, QA_PERSONAS, resolvePersona } from "./actors.mjs";
 import {
+  identityAllowsAnyScope,
+  parseSmartFileEntityId,
+  parseServiceIdentities,
+  resolveCallerIdentity,
   SMART_FILE_SCOPE_TYPES,
   scopeIdIsValid,
   WRITABLE_SCOPE_TYPES,
@@ -9,6 +13,8 @@ import {
   createFolder,
   createShare,
   getBlob,
+  getBlobScopes,
+  getFolder,
   listFolderFiles,
   listFolders,
   listPlacements,
@@ -20,19 +26,56 @@ import {
 const port = Number(process.env.PORT || 8080);
 const service = "smart-files";
 
+// Read-path caller identities (G-106 / defect #3). See identity.mjs for the
+// shape. Configured separately from the legacy write/personas/share token:
+// that token is deliberately NOT auto-granted read access to every scope,
+// because that would just keep the defect this row exists to close.
+const readIdentities = parseServiceIdentities(process.env.SMART_FILES_SERVICE_TOKENS);
+
+// The legacy single secret used by write, personas, and share routes. Those
+// routes are unchanged by this pass -- their tenant enforcement is the QA
+// persona / body-scope path in store.mjs, not this token.
+const legacyToken = process.env.SMART_FILES_SERVICE_TOKEN || "";
+const legacyTokenKnown = new Set(
+  [legacyToken, ...readIdentities.map((i) => i.token)].filter(Boolean),
+);
+
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 }
 
-function requireToken(req, res) {
-  const expected = process.env.SMART_FILES_SERVICE_TOKEN || "";
+function bearerToken(req) {
   const auth = req.headers.authorization || "";
-  const got = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!expected || !got || got !== expected) {
+  return auth.startsWith("Bearer ") ? auth.slice(7) : "";
+}
+
+function requireToken(req, res) {
+  const got = bearerToken(req);
+  if (!got || !legacyTokenKnown.has(got)) {
     json(res, 401, {
       error: "unauthorized",
       message: "Anonymous callers are refused. Bearer service token required.",
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Read-path scope gate. Refuses (403) unless the bearer token resolves to a
+ * configured SMART_FILES_SERVICE_TOKENS identity holding a grant for at least
+ * one of `scopePairs` (or a blanket "*"/"*" grant). No token, an unknown
+ * token, and a token whose grants don't cover this scope all refuse the same
+ * way -- the WDLL's own check (`_inbox/2026-08-25_govtech_wave1_WDLL.md`
+ * item 5) does not distinguish "anonymous" from "wrong tenant".
+ */
+function requireReadScope(req, res, scopePairs) {
+  const identity = resolveCallerIdentity(bearerToken(req), readIdentities);
+  if (!identityAllowsAnyScope(identity, scopePairs)) {
+    json(res, 403, {
+      error: "forbidden",
+      message: "Caller token is not verified for this scope.",
     });
     return false;
   }
@@ -131,8 +174,6 @@ async function handle(req, res) {
     return;
   }
 
-  if (!requireToken(req, res)) return;
-
   try {
     if (req.method === "GET" && path === "/api/smart-files/folders") {
       const scopeType = url.searchParams.get("scopeType") || "";
@@ -159,6 +200,7 @@ async function handle(req, res) {
         });
         return;
       }
+      if (!requireReadScope(req, res, [{ scopeType, scopeId }])) return;
       const folders = await listFolders(scopeType, scopeId);
       json(res, 200, {
         scopeType,
@@ -170,6 +212,7 @@ async function handle(req, res) {
     }
 
     if (req.method === "POST" && path === "/api/smart-files/folders") {
+      if (!requireToken(req, res)) return;
       const body = await readJson(req);
       const scope = requireWriteScope(body, res);
       if (!scope) return;
@@ -187,6 +230,7 @@ async function handle(req, res) {
 
     const shareGet = path.match(/^\/api\/smart-files\/share\/([^/]+)$/);
     if (req.method === "GET" && shareGet) {
+      if (!requireToken(req, res)) return;
       const data = await resolveShare(shareGet[1]);
       if (!data) {
         json(res, 404, { error: "share_not_found" });
@@ -203,6 +247,8 @@ async function handle(req, res) {
         json(res, 404, { error: "blob_not_found" });
         return;
       }
+      const scopes = await getBlobScopes(blobGet[1]);
+      if (!requireReadScope(req, res, scopes)) return;
       res.writeHead(200, {
         "content-type": blob.content_type,
         "content-length": String(blob.byte_size),
@@ -214,6 +260,7 @@ async function handle(req, res) {
 
     const folderShare = path.match(/^\/api\/smart-files\/folders\/(.+)\/share$/);
     if (req.method === "POST" && folderShare) {
+      if (!requireToken(req, res)) return;
       const body = await readJson(req);
       const persona = requirePersona(body, res);
       if (!persona) return;
@@ -228,6 +275,7 @@ async function handle(req, res) {
 
     const folderFiles = path.match(/^\/api\/smart-files\/folders\/(.+)\/files$/);
     if (req.method === "POST" && folderFiles) {
+      if (!requireToken(req, res)) return;
       const body = await readJson(req);
       const scope = requireWriteScope(body, res);
       if (!scope) return;
@@ -248,8 +296,8 @@ async function handle(req, res) {
 
     if (req.method === "GET" && folderFiles) {
       const folderId = folderFiles[1];
-      const data = await listFolderFiles(folderId);
-      if (!data.folder) {
+      const folder = await getFolder(folderId);
+      if (!folder) {
         json(res, 404, {
           error: "folder_not_found",
           folderId,
@@ -260,6 +308,9 @@ async function handle(req, res) {
         });
         return;
       }
+      if (!requireReadScope(req, res, [{ scopeType: folder.scopeType, scopeId: folder.scopeId }]))
+        return;
+      const data = await listFolderFiles(folderId);
       json(res, 200, { ...data, servedAt: new Date().toISOString() });
       return;
     }
@@ -267,6 +318,9 @@ async function handle(req, res) {
     const placements = path.match(/^\/api\/smart-files\/files\/(.+)\/placements$/);
     if (req.method === "GET" && placements) {
       const entityId = placements[1];
+      const parts = parseSmartFileEntityId(entityId);
+      const scopePairs = parts ? [{ scopeType: parts.scopeType, scopeId: parts.scopeId }] : [];
+      if (!requireReadScope(req, res, scopePairs)) return;
       const read = await readDocument(entityId);
       if (read.status !== "held") {
         json(res, read.status === "held-version-absent" ? 404 : 200, read);
@@ -284,6 +338,9 @@ async function handle(req, res) {
     const fileRead = path.match(/^\/api\/smart-files\/files\/(.+)$/);
     if (req.method === "GET" && fileRead) {
       const entityId = fileRead[1];
+      const parts = parseSmartFileEntityId(entityId);
+      const scopePairs = parts ? [{ scopeType: parts.scopeType, scopeId: parts.scopeId }] : [];
+      if (!requireReadScope(req, res, scopePairs)) return;
       const versionRaw = url.searchParams.get("version");
       const version = versionRaw ? Number.parseInt(versionRaw, 10) : undefined;
       const result = await readDocument(

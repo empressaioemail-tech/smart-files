@@ -104,3 +104,79 @@ export function parseSmartFileEntityId(entityId) {
 export function jurisdictionFipsFromEntityParts(parts) {
   return parts.scopeType === "jurisdiction" ? parts.scopeId : null;
 }
+
+/**
+ * G-106 / defect #3: the read-path caller scope model.
+ *
+ * A read-side caller identity is a token bound to an explicit list of grants,
+ * each a (scopeType, scopeId) pair the token may read. "*" is accepted in
+ * either field but must be written out by whoever configures the token --
+ * there is no default that grants it, because the whole point of this model
+ * is that an unconfigured or wrong-scope token reads nothing.
+ */
+export const ALL_SCOPES = "*";
+
+export function parseServiceIdentities(raw) {
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`SMART_FILES_SERVICE_TOKENS is not valid JSON: ${cause.message}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("SMART_FILES_SERVICE_TOKENS must be a JSON array");
+  }
+  return parsed.map((entry, i) => {
+    if (!entry?.token || !Array.isArray(entry?.grants) || entry.grants.length === 0) {
+      throw new Error(
+        `SMART_FILES_SERVICE_TOKENS[${i}] needs a token and a non-empty grants array`,
+      );
+    }
+    return {
+      token: String(entry.token),
+      grants: entry.grants.map((g, j) => {
+        if (!g?.scopeType || !g?.scopeId) {
+          throw new Error(
+            `SMART_FILES_SERVICE_TOKENS[${i}].grants[${j}] needs scopeType and scopeId`,
+          );
+        }
+        return { scopeType: String(g.scopeType), scopeId: String(g.scopeId) };
+      }),
+    };
+  });
+}
+
+export function resolveCallerIdentity(token, identities) {
+  if (!token) return null;
+  return identities.find((i) => i.token === token) ?? null;
+}
+
+export function identityHasBlanketGrant(identity) {
+  return (
+    identity?.grants.some((g) => g.scopeType === ALL_SCOPES && g.scopeId === ALL_SCOPES) ?? false
+  );
+}
+
+export function identityAllowsScope(identity, scopeType, scopeId) {
+  if (!identity) return false;
+  return identity.grants.some(
+    (g) =>
+      (g.scopeType === ALL_SCOPES || g.scopeType === scopeType) &&
+      (g.scopeId === ALL_SCOPES || g.scopeId === scopeId),
+  );
+}
+
+/**
+ * True if `identity` may read any of `scopePairs` (or holds a blanket grant).
+ * Reads whose underlying resource can name more than one scope candidate --
+ * today just a content-addressed blob, which can be referenced from more
+ * than one document -- use this instead of a single identityAllowsScope call.
+ * An empty `scopePairs` (nothing found to check against) allows only a
+ * blanket grant: an unknown scope is refused, never defaulted to open.
+ */
+export function identityAllowsAnyScope(identity, scopePairs) {
+  if (!identity) return false;
+  if (identityHasBlanketGrant(identity)) return true;
+  return scopePairs.some((s) => identityAllowsScope(identity, s.scopeType, s.scopeId));
+}
