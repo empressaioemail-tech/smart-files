@@ -7,6 +7,10 @@ export const QA_PERSONAS = [
   { orgId: "icc-demo", userId: "observer", label: "ICC observer / icc-demo" },
   { orgId: "template-city", userId: "g71-calendar", label: "Template city clerk / calendar" },
   { orgId: "template-city", userId: "staff", label: "Development services staff / template-city" },
+  // G-116: the real Bastrop, TX tenant — not template-city, not a demo/QA
+  // org. orgId "bastrop_tx" matches the convention plan-review already
+  // established and ratified for this same city (G-115 item 1).
+  { orgId: "bastrop_tx", userId: "staff", label: "Development services staff / bastrop_tx" },
 ];
 
 export function resolvePersona(orgId, userId) {
