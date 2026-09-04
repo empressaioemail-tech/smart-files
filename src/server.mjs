@@ -20,6 +20,7 @@ import {
   listPlacements,
   readDocument,
   resolveShare,
+  searchDocuments,
   uploadFileToFolder,
 } from "./store.mjs";
 
@@ -211,6 +212,46 @@ async function handle(req, res) {
       return;
     }
 
+    if (req.method === "GET" && path === "/api/smart-files/search") {
+      const scopeType = url.searchParams.get("scopeType") || "";
+      const scopeId = url.searchParams.get("scopeId") || "";
+      const q = (url.searchParams.get("q") || "").trim();
+      if (!SMART_FILE_SCOPE_TYPES.includes(scopeType) || !scopeId) {
+        json(res, 400, {
+          error: "scopeType and scopeId are required",
+          scopeTypes: SMART_FILE_SCOPE_TYPES,
+        });
+        return;
+      }
+      // Same instrument-only scopeId check as the folders route (PR #5):
+      // tenant/site/jurisdiction keep "non-empty is the whole rule", only the
+      // scope this row could plausibly get a malformed id for is validated.
+      if (scopeType === "instrument" && !scopeIdIsValid(scopeType, scopeId)) {
+        json(res, 400, {
+          error: "invalid_scope_id",
+          message: `scopeId is not a valid ${scopeType} identifier`,
+          scopeType,
+        });
+        return;
+      }
+      if (q.length < 2) {
+        json(res, 400, { error: "q must be at least 2 characters" });
+        return;
+      }
+      // Scope resolved and validated above; caller-scope gate runs BEFORE any
+      // data is touched, exactly like every other read route in this file.
+      if (!requireReadScope(req, res, [{ scopeType, scopeId }])) return;
+      const results = await searchDocuments(scopeType, scopeId, q);
+      json(res, 200, {
+        scopeType,
+        scopeId,
+        q,
+        results,
+        servedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
     if (req.method === "POST" && path === "/api/smart-files/folders") {
       if (!requireToken(req, res)) return;
       const body = await readJson(req);
@@ -291,6 +332,11 @@ async function handle(req, res) {
         bytes: Buffer.from(String(body.bytesBase64), "base64"),
         docSlug: body.docSlug ? String(body.docSlug) : undefined,
         provenance: body.provenance && typeof body.provenance === "object" ? body.provenance : undefined,
+        // Optional real placement target (e.g. a meeting), in place of the
+        // default 'folder' placement. Omitting both keeps every existing
+        // caller (municode calendar included) on its unchanged behavior.
+        targetType: body.targetType ? String(body.targetType) : undefined,
+        targetId: body.targetId ? String(body.targetId) : undefined,
       });
       json(res, 201, { file: uploaded, servedAt: new Date().toISOString() });
       return;

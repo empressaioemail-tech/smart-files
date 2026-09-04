@@ -58,7 +58,8 @@ jobs:
         run: |
           set -euo pipefail
           for f in sql/001_foundation.sql sql/002_rooms.sql \
-                   sql/003_fix_seed_folder_scope.sql sql/004_instrument_scope.sql; do
+                   sql/003_fix_seed_folder_scope.sql sql/004_instrument_scope.sql \
+                   sql/005_search_index.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
             echo "applied $f"
           done
@@ -79,6 +80,11 @@ jobs:
             WRONG_TOKEN=ci-read-scope-wrong-token \
             node scripts/read_scope_probe.mjs
           SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" node scripts/submittal_upload_probe.mjs
+          SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" \
+            MATCH_TOKEN=ci-read-scope-match-token \
+            WRONG_TOKEN=ci-read-scope-wrong-token \
+            node scripts/search_probe.mjs
+          SMART_FILES_BASE_URL="http://127.0.0.1:$PORT" node scripts/placement_target_probe.mjs
           kill $SRV
           wait $SRV 2>/dev/null || true
 
