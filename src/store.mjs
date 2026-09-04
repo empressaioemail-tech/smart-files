@@ -6,6 +6,7 @@ import {
   shareToken,
   slugify,
 } from "./cid.mjs";
+import { extractSearchText } from "./extract.mjs";
 import {
   assertScopeId,
   buildSmartFileEntityId,
@@ -18,6 +19,22 @@ import {
 
 const COUNTING_RULE =
   "DISTINCT smart_file_documents.id via smart_file_placements WHERE target_type='folder' AND target_id=folderId";
+
+/**
+ * Mirrors smart_file_placements_target_type_check (sql/001_foundation.sql,
+ * widened by sql/004_instrument_scope.sql). Kept here, not just in SQL, so a
+ * caller-supplied target on the write path (see uploadFileToFolder) is
+ * refused with a 400 before it ever reaches the database.
+ */
+export const PLACEMENT_TARGET_TYPES = [
+  "folder",
+  "parcel",
+  "project",
+  "asset",
+  "permit",
+  "meeting",
+  "instrument",
+];
 
 let pool;
 
@@ -135,6 +152,8 @@ export async function uploadFileToFolder({
   bytes,
   docSlug: explicitDocSlug,
   provenance: rawProvenance,
+  targetType,
+  targetId,
 }) {
   const scope = resolveWriteScope({ scopeType, scopeId, orgId });
   const folder = await getFolder(folderId);
@@ -149,6 +168,38 @@ export async function uploadFileToFolder({
   if (buf.length > 8 * 1024 * 1024) throw new Error("upload exceeds 8MB QA cap");
   const cid = contentCidFromBytes(buf);
   const actor = createdBy || actorKey(orgId, userId);
+
+  // Placement target (fix for the municode-style callers that today hard-code
+  // every upload to a 'folder' placement even when the real target -- e.g. a
+  // meeting -- is known). Both fields are optional and travel together: a
+  // caller that omits both keeps the exact pre-existing behavior (a 'folder'
+  // placement at folderId). A caller that names a real target gets a
+  // placement of THAT target_type/target_id instead -- the folder itself is
+  // still required and still scope-checked above, it just stops being the
+  // placement once something more specific is known.
+  if ((targetType && !targetId) || (!targetType && targetId)) {
+    const err = new Error("targetType and targetId must be provided together");
+    err.status = 400;
+    throw err;
+  }
+  if (targetType && !PLACEMENT_TARGET_TYPES.includes(targetType)) {
+    const err = new Error(
+      `targetType must be one of ${PLACEMENT_TARGET_TYPES.join(", ")}`,
+    );
+    err.status = 400;
+    throw err;
+  }
+  const placementTargetType = targetType || "folder";
+  const placementTargetId = targetType ? String(targetId) : folderId;
+
+  // Search indexing (G-search-1, 2026-09-04 decision): synchronous,
+  // gated on content_type, and best-effort -- a failed extraction fails only
+  // the index for this version, never the upload. See extract.mjs for the
+  // honesty contract on `reason`.
+  const extraction = await extractSearchText(
+    contentType || "application/octet-stream",
+    buf,
+  );
 
   // G-107 / transaction contract: a caller that opts into full provenance
   // gets it validated strictly (a missing key refuses the write, never
@@ -207,8 +258,8 @@ export async function uploadFileToFolder({
         const nextVersion = existing.rows[0].current_version + 1;
         await client.query(
           `INSERT INTO smart_file_versions
-             (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+             (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance, search_text)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
           [
             documentId,
             entityId,
@@ -217,6 +268,7 @@ export async function uploadFileToFolder({
             contentType || "application/octet-stream",
             buf.length,
             JSON.stringify(provenanceRecord),
+            extraction.text,
           ],
         );
         await client.query(
@@ -226,9 +278,9 @@ export async function uploadFileToFolder({
         await client.query(
           `INSERT INTO smart_file_placements
              (document_id, document_entity_id, target_type, target_id, placed_by)
-           VALUES ($1, $2, 'folder', $3, $4)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT (document_id, target_type, target_id) DO NOTHING`,
-          [documentId, entityId, folderId, actor],
+          [documentId, entityId, placementTargetType, placementTargetId, actor],
         );
         await client.query("COMMIT");
         return {
@@ -241,6 +293,8 @@ export async function uploadFileToFolder({
           byteSize: buf.length,
           folderId,
           revision: true,
+          searchIndexed: extraction.text !== null,
+          searchIndexReason: extraction.reason,
         };
       }
       const doc = await client.query(
@@ -261,8 +315,8 @@ export async function uploadFileToFolder({
       const documentId = doc.rows[0].id;
       await client.query(
         `INSERT INTO smart_file_versions
-           (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
-         VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb)`,
+           (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance, search_text)
+         VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb, $7)`,
         [
           documentId,
           entityId,
@@ -270,14 +324,15 @@ export async function uploadFileToFolder({
           contentType || "application/octet-stream",
           buf.length,
           JSON.stringify(provenanceRecord),
+          extraction.text,
         ],
       );
       await client.query(
         `INSERT INTO smart_file_placements
            (document_id, document_entity_id, target_type, target_id, placed_by)
-         VALUES ($1, $2, 'folder', $3, $4)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (document_id, target_type, target_id) DO NOTHING`,
-        [documentId, entityId, folderId, actor],
+        [documentId, entityId, placementTargetType, placementTargetId, actor],
       );
       await client.query("COMMIT");
       return {
@@ -290,6 +345,8 @@ export async function uploadFileToFolder({
         byteSize: buf.length,
         folderId,
         revision: false,
+        searchIndexed: extraction.text !== null,
+        searchIndexReason: extraction.reason,
       };
     }
 
@@ -333,8 +390,8 @@ export async function uploadFileToFolder({
     const documentId = doc.rows[0].id;
     await client.query(
       `INSERT INTO smart_file_versions
-         (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance)
-       VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb)`,
+         (document_id, document_entity_id, version, content_cid, content_type, byte_size, provenance, search_text)
+       VALUES ($1, $2, 1, $3, $4, $5, $6::jsonb, $7)`,
       [
         documentId,
         entityId,
@@ -342,13 +399,14 @@ export async function uploadFileToFolder({
         contentType || "application/octet-stream",
         buf.length,
         JSON.stringify(provenanceRecord),
+        extraction.text,
       ],
     );
     await client.query(
       `INSERT INTO smart_file_placements
          (document_id, document_entity_id, target_type, target_id, placed_by)
-       VALUES ($1, $2, 'folder', $3, $4)`,
-      [documentId, entityId, folderId, actor],
+       VALUES ($1, $2, $3, $4, $5)`,
+      [documentId, entityId, placementTargetType, placementTargetId, actor],
     );
     await client.query("COMMIT");
     return {
@@ -361,6 +419,8 @@ export async function uploadFileToFolder({
       byteSize: buf.length,
       folderId,
       revision: false,
+      searchIndexed: extraction.text !== null,
+      searchIndexReason: extraction.reason,
     };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -567,5 +627,47 @@ export async function listPlacements(entityId) {
     targetId: r.target_id,
     placedAt: r.placed_at,
     placedBy: r.placed_by,
+  }));
+}
+
+/**
+ * Real content search (sql/005_search_index.sql). Matches against the
+ * CURRENT version's search_text only -- a superseded version's extracted
+ * text stays in the tsvector index (nothing deletes it), but search results
+ * name the document a caller would actually open. Scoped to a single
+ * (scopeType, scopeId) pair, exactly like listFolders: the caller (server.mjs)
+ * already ran requireReadScope against that same pair before this is ever
+ * called, so this function does no access-control work of its own -- same
+ * division of responsibility as every other store.mjs read.
+ *
+ * Returns entityId/title/snippet metadata only, never blob bytes: those stay
+ * behind the separate, already-gated /blobs/:contentCid route.
+ */
+export async function searchDocuments(scopeType, scopeId, q) {
+  const { rows } = await getPool().query(
+    `SELECT d.entity_id, d.title, d.scope_type, d.scope_id, d.doc_slug, v.version,
+            ts_headline(
+              'english', v.search_text, plainto_tsquery('english', $3),
+              'MaxFragments=1, MinWords=15, MaxWords=40'
+            ) AS snippet,
+            ts_rank(v.search_tsv, plainto_tsquery('english', $3)) AS rank
+       FROM smart_file_versions v
+       JOIN smart_file_documents d
+         ON d.id = v.document_id AND v.version = d.current_version
+      WHERE d.scope_type = $1 AND d.scope_id = $2
+        AND v.search_tsv @@ plainto_tsquery('english', $3)
+      ORDER BY rank DESC, d.title
+      LIMIT 25`,
+    [scopeType, scopeId, q],
+  );
+  return rows.map((r) => ({
+    entityId: r.entity_id,
+    title: r.title,
+    scopeType: r.scope_type,
+    scopeId: r.scope_id,
+    docSlug: r.doc_slug,
+    version: r.version,
+    snippet: r.snippet,
+    rank: Number(r.rank),
   }));
 }

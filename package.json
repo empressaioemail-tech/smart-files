@@ -7,9 +7,10 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test src/identity.test.mjs src/cid.test.mjs src/actors.test.mjs"
+    "test": "node --test src/identity.test.mjs src/cid.test.mjs src/actors.test.mjs src/extract.test.mjs"
   },
   "dependencies": {
+    "pdf-parse": "^1.1.4",
     "pg": "^8.23.0"
   }
 }
